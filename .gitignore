@@ -1,0 +1,23 @@
+# Build
+contract/eureka/build/*
+
+# IDE and Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Dependencies
+target/
+node_modules/
+
+# Documentation
+/docs/
+
+# Environment
+.env
+.env.*
+
+# System files
+.DS_Store
+Thumbs.db
