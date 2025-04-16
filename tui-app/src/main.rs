@@ -1,0 +1,297 @@
+use crossterm::{
+    event::{self, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem, Paragraph},
+    Terminal,
+};
+use std::{io, time::Duration};
+
+mod app;
+use app::App;
+use crate::app::TaskStatus;
+
+fn main() -> io::Result<()> {
+    // 設置終端
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    // 初始化應用程序狀態
+    let mut app = App::new();
+
+    // 主循環
+    let mut should_quit = false;
+    while !should_quit {
+        terminal.draw(|f| {
+            let size = f.size();
+            
+            // 創建左右分欄布局
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(20),
+                    Constraint::Percentage(80),
+                ])
+                .split(size);
+
+            // 獲取當前主題顏色
+            let (primary_color, secondary_color, accent_color) = if app.is_online {
+                (Color::Cyan, Color::LightBlue, Color::DarkGray)  // 科技感冷色調
+            } else {
+                (Color::Magenta, Color::Red, Color::DarkGray)  // 未來感暖色調
+            };
+
+            // 左側欄的垂直布局
+            let left_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),  // 錢包地址
+                    Constraint::Length(3),  // 印表機 ID 和工資
+                    Constraint::Length(3),  // 在線狀態
+                    Constraint::Min(0),     // 列表區域
+                    Constraint::Length(5),  // 操作提示
+                ])
+                .split(chunks[0]);
+
+            // 錢包地址顯示
+            let wallet_block = Block::default()
+                .title("WALLET ADDRESS")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(primary_color));
+            let wallet_text = Paragraph::new(app.wallet_address.clone())
+                .block(wallet_block)
+                .style(Style::default().fg(secondary_color));
+            f.render_widget(wallet_text, left_chunks[0]);
+
+            // 印表機 ID 和工資顯示
+            let printer_reward_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(50),
+                    Constraint::Percentage(50),
+                ])
+                .split(left_chunks[1]);
+
+            // 印表機 ID
+            let printer_block = Block::default()
+                .title("PRINTER ID")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(primary_color));
+            let printer_text = Paragraph::new(app.printer_id.clone())
+                .block(printer_block)
+                .style(Style::default().fg(secondary_color));
+            f.render_widget(printer_text, printer_reward_chunks[0]);
+
+            // 可收穫工資
+            let reward_block = Block::default()
+                .title("REWARDS")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(primary_color));
+            let reward_text = if app.is_harvesting {
+                "Harvest? (Y/N)".to_string()
+            } else {
+                app.harvestable_rewards.clone()
+            };
+            let reward_style = if app.is_harvesting {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(secondary_color)
+            };
+            let reward = Paragraph::new(reward_text)
+                .block(reward_block)
+                .style(reward_style);
+            f.render_widget(reward, printer_reward_chunks[1]);
+
+            // 在線狀態切換
+            let status_block = Block::default()
+                .title("STATUS")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(primary_color));
+            
+            let (status_text, status_style) = if app.is_confirming {
+                let target_status = if app.is_online { "OFFLINE" } else { "ONLINE" };
+                (
+                    format!("Switch to {}? (Y/N)", target_status),
+                    Style::default().fg(Color::Yellow)
+                )
+            } else {
+                (
+                    if app.is_online {
+                        "● ONLINE [Press T to toggle]".to_string()
+                    } else {
+                        "○ OFFLINE [Press T to toggle]".to_string()
+                    },
+                    Style::default().fg(secondary_color)
+                )
+            };
+            
+            let status = Paragraph::new(status_text)
+                .style(status_style)
+                .block(status_block);
+            f.render_widget(status, left_chunks[2]);
+
+            // 根據狀態顯示不同的列表
+            if app.is_online {
+                // 在線狀態顯示任務列表
+                let task_area = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(3),  // 當前打印任務
+                        Constraint::Min(0),     // 歷史記錄
+                    ])
+                    .split(left_chunks[3]);
+
+                // 顯示當前打印任務
+                let current_task = app.tasks
+                    .iter()
+                    .find(|task| matches!(task.status, TaskStatus::Printing(_)))
+                    .map(|task| {
+                        if let TaskStatus::Printing(progress) = task.status {
+                            format!("▶ {} - {} [{}%]", task.id, task.name, progress)
+                        } else {
+                            unreachable!()
+                        }
+                    })
+                    .unwrap_or_else(|| "◇ No active print job".to_string());
+
+                let current_task_block = Block::default()
+                    .title("NOW PRINTING")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(primary_color));
+                let current_task_text = Paragraph::new(current_task)
+                    .style(Style::default().fg(secondary_color))
+                    .block(current_task_block);
+                f.render_widget(current_task_text, task_area[0]);
+
+                // 顯示已完成任務
+                let completed_tasks: Vec<ListItem> = app.tasks
+                    .iter()
+                    .filter(|task| matches!(task.status, TaskStatus::Completed))
+                    .map(|task| {
+                        ListItem::new(format!("✓ {} - {}", task.id, task.name))
+                            .style(Style::default().fg(accent_color))
+                    })
+                    .collect();
+
+                let tasks_list = List::new(completed_tasks)
+                    .block(Block::default()
+                        .title("TASKS HISTORY")
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(primary_color)))
+                    .highlight_style(Style::default()
+                        .add_modifier(Modifier::BOLD)
+                        .fg(secondary_color));
+                f.render_stateful_widget(tasks_list, task_area[1], &mut app.tasks_state);
+            } else {
+                // 離線狀態顯示資產列表
+                let assets: Vec<ListItem> = app.assets
+                    .iter()
+                    .map(|asset| {
+                        ListItem::new(format!("◈ {}", asset))
+                            .style(Style::default().fg(accent_color))
+                    })
+                    .collect();
+                let assets_list = List::new(assets)
+                    .block(Block::default()
+                        .title("3D MODELS")
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(primary_color)))
+                    .highlight_style(Style::default()
+                        .add_modifier(Modifier::BOLD)
+                        .fg(secondary_color));
+                f.render_stateful_widget(assets_list, left_chunks[3], &mut app.assets_state);
+            }
+
+            // 操作提示
+            let help_text = if app.is_confirming {
+                vec![
+                    Line::from(vec![
+                        Span::styled("Y", Style::default().fg(Color::Yellow)),
+                        Span::raw(": Confirm"),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("N", Style::default().fg(Color::Yellow)),
+                        Span::raw(": Cancel"),
+                    ]),
+                ]
+            } else if app.is_harvesting {
+                vec![
+                    Line::from(vec![
+                        Span::styled("Y", Style::default().fg(Color::Yellow)),
+                        Span::raw(": Confirm"),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("N", Style::default().fg(Color::Yellow)),
+                        Span::raw(": Cancel"),
+                    ]),
+                ]
+            } else {
+                vec![
+                    Line::from(vec![
+                        Span::styled("Q", Style::default().fg(secondary_color)),
+                        Span::raw(" QUIT"),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("T", Style::default().fg(secondary_color)),
+                        Span::raw(" TOGGLE STATUS"),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("H", Style::default().fg(secondary_color)),
+                        Span::raw(" HARVEST REWARDS"),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("↑↓", Style::default().fg(secondary_color)),
+                        Span::raw(" NAVIGATE LIST"),
+                    ]),
+                ]
+            };
+            let help_block = Block::default()
+                .title("CONTROLS")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(primary_color));
+            let help = Paragraph::new(help_text)
+                .block(help_block)
+                .style(Style::default().fg(accent_color));
+            f.render_widget(help, left_chunks[4]);
+
+            // 右側內容區
+            let right_block = Block::default()
+                .title("CONTENT")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(primary_color));
+            f.render_widget(right_block, chunks[1]);
+        })?;
+
+        // 處理事件
+        if event::poll(Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Char('q') => should_quit = true,
+                    KeyCode::Char('t') if !app.is_confirming && !app.is_harvesting => app.start_toggle_confirm(),
+                    KeyCode::Char('h') if !app.is_confirming && !app.is_harvesting => app.start_harvest_confirm(),
+                    KeyCode::Char('y') if app.is_confirming => app.confirm_toggle(),
+                    KeyCode::Char('n') if app.is_confirming => app.cancel_toggle(),
+                    KeyCode::Char('y') if app.is_harvesting => app.confirm_harvest(),
+                    KeyCode::Char('n') if app.is_harvesting => app.cancel_harvest(),
+                    KeyCode::Down => app.next_item(),
+                    KeyCode::Up => app.previous_item(),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // 清理
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    Ok(())
+}
