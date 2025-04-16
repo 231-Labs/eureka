@@ -6,14 +6,19 @@
 - 網路：Sui devnet
 
 ### 合約地址
-- Package ID: `0x30e757c78a72a8b2cf62a61cf38bfc5e19c9cbaee028af2d0e6b7d7bd809e547`
+- Package ID: `0x0f954776ba10e542e9a8ae9bf617aa4e3af99d800c1fefdf24dd6d55c0dfcf58`
 - 模組：
   - eureka
   - print_job
 
 ### 重要物件
-- PrinterRegisty (Shared): `0xf2147e5d16420e6f3bef05b00177172271a7e735877515ca35f623b3dd612c27`
-- UpgradeCap: `0x07ed084e63a86768c3428daaf27aa7a9baeadccde6edb2f75784ed829be93bd0`
+- PrinterRegisty (Shared): `0x68cd9ef41a500fb8d35dbc2dccffb5594e68596516ae27f72100cba3dc7e9781`
+- UpgradeCap: `0x91a6547ec0a91069cf5cd5d4f8cb800158304e8ac4a2cef4d105b46d803999c5`
+
+### 更新記錄
+- 2024-03-21: 修復權限檢查漏洞
+  - 添加 PrinterCap 的權限檢查邏輯
+  - 確保只有正確的 PrinterCap 持有者可以更新打印機狀態和提取收益
 
 ## 合約功能
 

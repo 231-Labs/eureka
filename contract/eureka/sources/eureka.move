@@ -90,7 +90,7 @@ module eureka::eureka {
 
     // === Public Functions ===
     #[allow(lint(self_transfer))]
-    public fun register_printer(
+    public entry fun register_printer(
         state: &mut PrinterRegisty,
         price: u64,
         ctx: &mut TxContext,
@@ -124,7 +124,7 @@ module eureka::eureka {
         });
     }
 
-    public fun create_print_job(
+    public entry fun create_print_job(
         printer: &mut Printer,
         payment: Coin<SUI>,
         ctx: &mut TxContext,
@@ -170,7 +170,7 @@ module eureka::eureka {
         job_id
     }
 
-    public fun update_print_job(
+    public entry fun update_print_job(
         _cap: &PrinterCap,
         printer: &mut Printer,
         job: &mut PrintJob,
@@ -201,20 +201,23 @@ module eureka::eureka {
         });
     }
 
-    public fun withdraw_earnings(
-        _cap: &PrinterCap,
+    public entry fun withdraw_earnings(
+        cap: &PrinterCap,
         printer: &mut Printer,
         ctx: &mut TxContext,
-    ): Coin<SUI> {
+    ) {
+        assert!(cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
         let amount = balance::value(&printer.earnings);
-        coin::from_balance(balance::split(&mut printer.earnings, amount), ctx)
+        let coin = coin::from_balance(balance::split(&mut printer.earnings, amount), ctx);
+        transfer::public_transfer(coin, tx_context::sender(ctx));
     }
 
-    public fun update_printer_status(
-        _cap: &PrinterCap,
+    public entry fun update_printer_status(
+        cap: &PrinterCap,
         printer: &mut Printer,
         new_status: vector<u8>,
     ) {
+        assert!(cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
         printer.status = std::string::utf8(new_status);
         
         event::emit(PrinterStatusUpdated {

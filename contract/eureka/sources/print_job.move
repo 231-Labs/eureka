@@ -10,8 +10,8 @@ module eureka::print_job {
 
     // === Constants ===
     const PRINTER_STATUS_ONLINE: vector<u8> = b"online";
+    // const PRINTER_STATUS_OFFLINE: vector<u8> = b"offline";
     const PRINTER_STATUS_BUSY: vector<u8> = b"busy";
-
     const PRINT_STATUS_PENDING: vector<u8> = b"pending";
     const PRINT_STATUS_PRINTING: vector<u8> = b"printing";
     const PRINT_STATUS_COMPLETED: vector<u8> = b"completed";
