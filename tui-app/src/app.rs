@@ -33,6 +33,10 @@ pub struct App {
     pub sui_balance: u128,
     pub wal_balance: u128,
     pub network_state: NetworkState,
+    pub error_message: Option<String>,  // 新增錯誤訊息欄位
+    // 新增機器狀態字段
+    pub nozzle_temp: f32,      // 噴嘴溫度
+    pub bed_temp: f32,         // 加熱板溫度
 }
 
 impl App {
@@ -154,6 +158,9 @@ impl App {
             sui_balance,
             wal_balance,
             network_state,
+            error_message: None,  // 初始化為 None
+            nozzle_temp: 0.0,
+            bed_temp: 0.0,
         };
         
         // 設置初始選中項
@@ -269,6 +276,18 @@ impl App {
 
     pub async fn update_network(&mut self) -> Result<()> {
         self.switch_network();
+        self.error_message = None;  // 清除之前的錯誤訊息
+        
+        match self.do_update_network().await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                self.error_message = Some(e.to_string());  // 儲存錯誤訊息
+                Ok(())  // 不中斷程序執行
+            }
+        }
+    }
+
+    async fn do_update_network(&mut self) -> Result<()> {
         self.wallet = Wallet::new(&self.network_state).await?;
         self.wallet_address = shorten_id(&self.wallet.get_active_address().await?.to_string());
         self.sui_balance = self.wallet.get_sui_balance(self.wallet.get_active_address().await?).await?;
@@ -298,6 +317,10 @@ impl App {
             NETWORKS[2].0.to_uppercase(),  // MAINNET
             NETWORKS[0].0.to_uppercase()   // DEVNET
         )
+    }
+
+    pub fn clear_error(&mut self) {
+        self.error_message = None;
     }
 
     // pub async fn get_wallet_balance(&self) -> Result<u128> {

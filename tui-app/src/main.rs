@@ -350,7 +350,66 @@ async fn main() -> io::Result<()> {
                 .title("CONTENT")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(primary_color));
+
+            let right_area = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),  // 錯誤訊息區域，與左側錢包地址區域一致
+                    Constraint::Length(3),  // 機器狀態區域，與左側網絡狀態區域一致
+                    Constraint::Min(0),     // 其他內容
+                ])
+                .split(chunks[1]);
+
             f.render_widget(right_block, chunks[1]);
+
+            // 錯誤訊息區域
+            if let Some(error) = &app.error_message {
+                let error_block = Block::default()
+                    .title("ERROR")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Red));
+
+                let error_text = Paragraph::new(error.clone())
+                    .style(Style::default().fg(Color::Red))
+                    .block(error_block)
+                    .alignment(Alignment::Left);
+
+                f.render_widget(error_text, right_area[0]);
+            }
+
+            // 機器狀態區域
+            let status_layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(50),
+                    Constraint::Percentage(50),
+                ])
+                .split(right_area[1]);
+
+            // 噴嘴溫度
+            let nozzle_block = Block::default()
+                .title("NOZZLE TEMP")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(secondary_color));
+            
+            let nozzle_text = Paragraph::new(format!("{:.1}°C", app.nozzle_temp))
+                .style(Style::default().fg(if app.nozzle_temp > 50.0 { Color::Red } else { secondary_color }))
+                .alignment(Alignment::Center)
+                .block(nozzle_block);
+
+            // 加熱板溫度
+            let bed_block = Block::default()
+                .title("BED TEMP")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(secondary_color));
+            
+            let bed_text = Paragraph::new(format!("{:.1}°C", app.bed_temp))
+                .style(Style::default().fg(if app.bed_temp > 50.0 { Color::Red } else { secondary_color }))
+                .alignment(Alignment::Center)
+                .block(bed_block);
+
+            f.render_widget(nozzle_text, status_layout[0]);
+            f.render_widget(bed_text, status_layout[1]);
         })?;
 
         // 處理事件
@@ -358,12 +417,30 @@ async fn main() -> io::Result<()> {
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Char('q') => should_quit = true,
-                    KeyCode::Char('t') if !app.is_confirming && !app.is_harvesting => app.start_toggle_confirm(),
-                    KeyCode::Char('h') if !app.is_confirming && !app.is_harvesting => app.start_harvest_confirm(),
-                    KeyCode::Char('y') if app.is_confirming => app.confirm_toggle(),
-                    KeyCode::Char('n') if app.is_confirming => app.cancel_toggle(),
-                    KeyCode::Char('y') if app.is_harvesting => app.confirm_harvest(),
-                    KeyCode::Char('n') if app.is_harvesting => app.cancel_harvest(),
+                    KeyCode::Char('t') if !app.is_confirming && !app.is_harvesting => {
+                        app.clear_error();
+                        app.start_toggle_confirm()
+                    },
+                    KeyCode::Char('h') if !app.is_confirming && !app.is_harvesting => {
+                        app.clear_error();
+                        app.start_harvest_confirm()
+                    },
+                    KeyCode::Char('y') if app.is_confirming => {
+                        app.clear_error();
+                        app.confirm_toggle()
+                    },
+                    KeyCode::Char('n') if app.is_confirming => {
+                        app.clear_error();
+                        app.cancel_toggle()
+                    },
+                    KeyCode::Char('y') if app.is_harvesting => {
+                        app.clear_error();
+                        app.confirm_harvest()
+                    },
+                    KeyCode::Char('n') if app.is_harvesting => {
+                        app.clear_error();
+                        app.cancel_harvest()
+                    },
                     KeyCode::Char('n') if !app.is_confirming && !app.is_harvesting && !app.is_switching_network => {
                         app.start_network_switch();
                     }
