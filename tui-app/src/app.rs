@@ -1,4 +1,6 @@
 use ratatui::widgets::ListState;
+use crate::wallet::Wallet;
+use anyhow::Result;
 
 #[derive(Clone)]
 pub enum TaskStatus {
@@ -24,12 +26,21 @@ pub struct App {
     pub is_confirming: bool,
     pub is_harvesting: bool,
     pub harvestable_rewards: String,
+    pub sui_balance: u128,
+    pub wal_balance: u128,
 }
 
 impl App {
-    pub fn new() -> App {
+    pub async fn new() -> Result<App> {
+        let wallet = Wallet::new().await?;
+        let wallet_address = wallet.get_active_address().await?.to_string();
+        
+        // 獲取餘額
+        let sui_balance = wallet.get_sui_balance(wallet.get_active_address().await?).await?;
+        let wal_balance = 0; // 初始 WAL 餘額為 0
+        
         let mut app = App {
-            wallet_address: "Not Connected".to_string(),
+            wallet_address,
             printer_id: "Not Set".to_string(),
             is_online: false,
             assets: vec![
@@ -131,12 +142,14 @@ impl App {
             is_confirming: false,
             is_harvesting: false,
             harvestable_rewards: "100.0 SUI".to_string(),
+            sui_balance,
+            wal_balance,
         };
         
         // 設置初始選中項
         app.assets_state.select(Some(0));
         app.tasks_state.select(Some(0));
-        app
+        Ok(app)
     }
 
     pub fn start_toggle_confirm(&mut self) {
@@ -239,4 +252,22 @@ impl App {
             self.assets_state.select(Some(i));
         }
     }
+
+    // pub async fn get_wallet_balance(&self) -> Result<u128> {
+    //     if let Some(wallet) = &self.wallet {
+    //         let address = wallet.get_active_address().await?;
+    //         wallet.get_sui_balance(address).await
+    //     } else {
+    //         Err(anyhow::anyhow!("Wallet not initialized"))
+    //     }
+    // }
+
+    // pub async fn update_wallet_address(&mut self) -> Result<()> {
+    //     if let Some(wallet) = &self.wallet {
+    //         self.wallet_address = wallet.get_active_address().await?.to_string();
+    //         Ok(())
+    //     } else {
+    //         Err(anyhow::anyhow!("Wallet not initialized"))
+    //     }
+    // }
 } 
