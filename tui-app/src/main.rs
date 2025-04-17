@@ -14,8 +14,9 @@ use ratatui::{
 use std::{io, time::Duration};
 
 mod app;
-mod wallet;
+mod constants;
 mod utils;
+mod wallet;
 
 use app::App;
 use crate::app::TaskStatus;

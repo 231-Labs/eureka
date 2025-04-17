@@ -6,7 +6,7 @@ use sui_sdk::wallet_context::WalletContext;
 
 pub async fn setup_for_read() -> Result<(SuiClient, SuiAddress)> {
     let sui = SuiClientBuilder::default()
-        .build("https://fullnode.testnet.sui.io:443")
+        .build("https://fullnode.mainnet.sui.io:443")
         .await?;
     
     let config_path = dirs::home_dir()
