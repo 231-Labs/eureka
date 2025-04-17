@@ -3,10 +3,35 @@ use sui_sdk::SuiClient;
 use sui_sdk::SuiClientBuilder;
 use sui_sdk::types::base_types::SuiAddress;
 use sui_sdk::wallet_context::WalletContext;
+use crate::constants::NETWORKS;
 
-pub async fn setup_for_read() -> Result<(SuiClient, SuiAddress)> {
+pub struct NetworkState {
+    pub current_network: usize,
+}
+
+impl NetworkState {
+    pub fn new() -> Self {
+        NetworkState {
+            current_network: 0  // 默認為 devnet
+        }
+    }
+
+    pub fn next_network(&mut self) {
+        self.current_network = (self.current_network + 1) % NETWORKS.len();
+    }
+
+    pub fn get_current_network(&self) -> &str {
+        NETWORKS[self.current_network].0
+    }
+
+    pub fn get_current_rpc(&self) -> &str {
+        NETWORKS[self.current_network].1
+    }
+}
+
+pub async fn setup_for_read(network_state: &NetworkState) -> Result<(SuiClient, SuiAddress)> {
     let sui = SuiClientBuilder::default()
-        .build("https://fullnode.mainnet.sui.io:443")
+        .build(network_state.get_current_rpc())
         .await?;
     
     let config_path = dirs::home_dir()

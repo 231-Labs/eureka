@@ -1,7 +1,7 @@
 use anyhow::Result;
 use sui_sdk::types::base_types::SuiAddress;
 use sui_sdk::SuiClient;
-use crate::utils::setup_for_read;
+use crate::utils::{setup_for_read, NetworkState};
 use crate::constants::WALRUS_COIN_TYPE;
 
 pub struct Wallet {
@@ -10,8 +10,8 @@ pub struct Wallet {
 }
 
 impl Wallet {
-    pub async fn new() -> Result<Self> {
-        let (client, address) = setup_for_read().await?;
+    pub async fn new(network_state: &NetworkState) -> Result<Self> {
+        let (client, address) = setup_for_read(network_state).await?;
         Ok(Wallet { client, address })
     }
 

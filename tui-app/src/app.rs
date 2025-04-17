@@ -1,5 +1,7 @@
 use ratatui::widgets::ListState;
 use crate::wallet::Wallet;
+use crate::utils::NetworkState;
+use crate::constants::NETWORKS;
 use anyhow::Result;
 
 #[derive(Clone)]
@@ -16,6 +18,7 @@ pub struct PrintTask {
 }
 
 pub struct App {
+    pub wallet: Wallet,
     pub wallet_address: String,
     pub printer_id: String,
     pub is_online: bool,
@@ -25,14 +28,17 @@ pub struct App {
     pub tasks_state: ListState,
     pub is_confirming: bool,
     pub is_harvesting: bool,
+    pub is_switching_network: bool,
     pub harvestable_rewards: String,
     pub sui_balance: u128,
     pub wal_balance: u128,
+    pub network_state: NetworkState,
 }
 
 impl App {
     pub async fn new() -> Result<App> {
-        let wallet = Wallet::new().await?;
+        let network_state = NetworkState::new();
+        let wallet = Wallet::new(&network_state).await?;
         let wallet_address = wallet.get_active_address().await?.to_string();
         
         // get balance
@@ -40,6 +46,7 @@ impl App {
         let wal_balance = wallet.get_walrus_balance(wallet.get_active_address().await?).await?;
         
         let mut app = App {
+            wallet,
             wallet_address,
             printer_id: "Not Set".to_string(),
             is_online: false,
@@ -141,9 +148,11 @@ impl App {
             tasks_state: ListState::default(),
             is_confirming: false,
             is_harvesting: false,
+            is_switching_network: false,
             harvestable_rewards: "100.0 SUI".to_string(),
             sui_balance,
             wal_balance,
+            network_state,
         };
         
         // 設置初始選中項
@@ -251,6 +260,42 @@ impl App {
             };
             self.assets_state.select(Some(i));
         }
+    }
+
+    pub fn switch_network(&mut self) {
+        self.network_state.next_network();
+    }
+
+    pub async fn update_network(&mut self) -> Result<()> {
+        self.switch_network();
+        self.wallet = Wallet::new(&self.network_state).await?;
+        self.wallet_address = self.wallet.get_active_address().await?.to_string();
+        self.sui_balance = self.wallet.get_sui_balance(self.wallet.get_active_address().await?).await?;
+        self.wal_balance = self.wallet.get_walrus_balance(self.wallet.get_active_address().await?).await?;
+        Ok(())
+    }
+
+    pub fn start_network_switch(&mut self) {
+        self.is_switching_network = true;
+    }
+
+    pub fn cancel_network_switch(&mut self) {
+        self.is_switching_network = false;
+    }
+
+    pub fn switch_to_network(&mut self, network_index: usize) {
+        if network_index < NETWORKS.len() {
+            self.network_state.current_network = network_index;
+        }
+        self.is_switching_network = false;
+    }
+
+    pub fn get_network_options(&self) -> String {
+        format!("1) {}  2) {}  3) {}", 
+            NETWORKS[1].0.to_uppercase(),  // TESTNET
+            NETWORKS[2].0.to_uppercase(),  // MAINNET
+            NETWORKS[0].0.to_uppercase()   // DEVNET
+        )
     }
 
     // pub async fn get_wallet_balance(&self) -> Result<u128> {

@@ -62,9 +62,10 @@ async fn main() -> io::Result<()> {
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(3),  // 錢包地址
+                    Constraint::Length(3),  // 網絡狀態
                     Constraint::Length(3),  // 代幣餘額
+                    Constraint::Length(3),  // WAL 餘額
                     Constraint::Length(3),  // 印表機 ID 和工資
-                    Constraint::Length(3),  // 在線狀態
                     Constraint::Min(0),     // 列表區域
                     Constraint::Length(5),  // 操作提示
                 ])
@@ -93,6 +94,28 @@ async fn main() -> io::Result<()> {
                 .alignment(Alignment::Left);
             f.render_widget(wallet_text, left_chunks[0]);
 
+            // 網絡狀態顯示
+            let network_block = Block::default()
+                .title(if app.is_switching_network {
+                    "SELECT NETWORK (1-3)"
+                } else {
+                    "CURRENT NETWORK"
+                })
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(primary_color));
+
+            let network_text = if app.is_switching_network {
+                app.get_network_options()
+            } else {
+                format!("{}  [Press N to switch]", app.network_state.get_current_network().to_uppercase())
+            };
+
+            let network_paragraph = Paragraph::new(network_text)
+                .block(network_block)
+                .style(Style::default().fg(if app.is_switching_network { Color::Yellow } else { secondary_color }))
+                .alignment(Alignment::Left);
+            f.render_widget(network_paragraph, left_chunks[1]);
+
             // 代幣餘額顯示
             let balance_chunks = Layout::default()
                 .direction(Direction::Horizontal)
@@ -100,7 +123,7 @@ async fn main() -> io::Result<()> {
                     Constraint::Percentage(50),
                     Constraint::Percentage(50),
                 ])
-                .split(left_chunks[1]);
+                .split(left_chunks[2]);
 
             // SUI 餘額顯示
             let sui_block = Block::default()
@@ -133,7 +156,7 @@ async fn main() -> io::Result<()> {
                     Constraint::Percentage(50),
                     Constraint::Percentage(50),
                 ])
-                .split(left_chunks[2]);
+                .split(left_chunks[3]);
 
             // 印表機 ID
             let printer_block = Block::default()
@@ -191,7 +214,7 @@ async fn main() -> io::Result<()> {
             let status = Paragraph::new(status_text)
                 .style(status_style)
                 .block(status_block);
-            f.render_widget(status, left_chunks[3]);
+            f.render_widget(status, left_chunks[4]);
 
             // 根據狀態顯示不同的列表
             if app.is_online {
@@ -202,7 +225,7 @@ async fn main() -> io::Result<()> {
                         Constraint::Length(3),  // 當前打印任務
                         Constraint::Min(0),     // 歷史記錄
                     ])
-                    .split(left_chunks[4]);
+                    .split(left_chunks[5]);
 
                 // 顯示當前打印任務
                 let current_task = app.tasks
@@ -262,7 +285,7 @@ async fn main() -> io::Result<()> {
                     .highlight_style(Style::default()
                         .add_modifier(Modifier::BOLD)
                         .fg(secondary_color));
-                f.render_stateful_widget(assets_list, left_chunks[4], &mut app.assets_state);
+                f.render_stateful_widget(assets_list, left_chunks[5], &mut app.assets_state);
             }
 
             // 操作提示
@@ -278,6 +301,17 @@ async fn main() -> io::Result<()> {
                     ]),
                 ]
             } else if app.is_harvesting {
+                vec![
+                    Line::from(vec![
+                        Span::styled("Y", Style::default().fg(Color::Yellow)),
+                        Span::raw(": Confirm"),
+                    ]),
+                    Line::from(vec![
+                        Span::styled("N", Style::default().fg(Color::Yellow)),
+                        Span::raw(": Cancel"),
+                    ]),
+                ]
+            } else if app.is_switching_network {
                 vec![
                     Line::from(vec![
                         Span::styled("Y", Style::default().fg(Color::Yellow)),
@@ -306,6 +340,10 @@ async fn main() -> io::Result<()> {
                         Span::styled("↑↓", Style::default().fg(secondary_color)),
                         Span::raw(" NAVIGATE LIST"),
                     ]),
+                    Line::from(vec![
+                        Span::styled("N", Style::default().fg(secondary_color)),
+                        Span::raw(" SWITCH NETWORK"),
+                    ]),
                 ]
             };
             let help_block = Block::default()
@@ -315,7 +353,7 @@ async fn main() -> io::Result<()> {
             let help = Paragraph::new(help_text)
                 .block(help_block)
                 .style(Style::default().fg(accent_color));
-            f.render_widget(help, left_chunks[5]);
+            f.render_widget(help, left_chunks[6]);
 
             // 右側內容區
             let right_block = Block::default()
@@ -336,6 +374,30 @@ async fn main() -> io::Result<()> {
                     KeyCode::Char('n') if app.is_confirming => app.cancel_toggle(),
                     KeyCode::Char('y') if app.is_harvesting => app.confirm_harvest(),
                     KeyCode::Char('n') if app.is_harvesting => app.cancel_harvest(),
+                    KeyCode::Char('n') if !app.is_confirming && !app.is_harvesting && !app.is_switching_network => {
+                        app.start_network_switch();
+                    }
+                    KeyCode::Char('1') if app.is_switching_network => {
+                        app.switch_to_network(0);  
+                        if let Err(e) = app.update_network().await {
+                            eprintln!("Failed to update network: {}", e);
+                        }
+                    }
+                    KeyCode::Char('2') if app.is_switching_network => {
+                        app.switch_to_network(1);  
+                        if let Err(e) = app.update_network().await {
+                            eprintln!("Failed to update network: {}", e);
+                        }
+                    }
+                    KeyCode::Char('3') if app.is_switching_network => {
+                        app.switch_to_network(2);  
+                        if let Err(e) = app.update_network().await {
+                            eprintln!("Failed to update network: {}", e);
+                        }
+                    }
+                    KeyCode::Esc if app.is_switching_network => {
+                        app.cancel_network_switch();
+                    }
                     KeyCode::Down => app.next_item(),
                     KeyCode::Up => app.previous_item(),
                     _ => {}
