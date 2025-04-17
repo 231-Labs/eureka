@@ -149,7 +149,7 @@ async fn main() -> io::Result<()> {
 
             // 印表機 ID
             let printer_block = Block::default()
-                .title("PRINTER ID")
+                .title("PRINTER ID (DEVNET)") // TODO: add changeable printer id
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(primary_color));
             let printer_text = Paragraph::new(app.printer_id.clone())
