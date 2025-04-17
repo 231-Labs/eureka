@@ -5,7 +5,7 @@ use crossterm::{
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Alignment},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
@@ -14,10 +14,14 @@ use ratatui::{
 use std::{io, time::Duration};
 
 mod app;
+mod wallet;
+mod utils;
+
 use app::App;
 use crate::app::TaskStatus;
 
-fn main() -> io::Result<()> {
+#[tokio::main]
+async fn main() -> io::Result<()> {
     // 設置終端
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -26,7 +30,9 @@ fn main() -> io::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // 初始化應用程序狀態
-    let mut app = App::new();
+    let mut app = App::new().await.map_err(|e| {
+        io::Error::new(io::ErrorKind::Other, format!("Failed to initialize app: {}", e))
+    })?;
 
     // 主循環
     let mut should_quit = false;
@@ -55,6 +61,7 @@ fn main() -> io::Result<()> {
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(3),  // 錢包地址
+                    Constraint::Length(3),  // 代幣餘額
                     Constraint::Length(3),  // 印表機 ID 和工資
                     Constraint::Length(3),  // 在線狀態
                     Constraint::Min(0),     // 列表區域
@@ -67,10 +74,56 @@ fn main() -> io::Result<()> {
                 .title("WALLET ADDRESS")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(primary_color));
-            let wallet_text = Paragraph::new(app.wallet_address.clone())
+            
+            let formatted_address = {
+                let addr = app.wallet_address.clone();
+                if addr.len() > 12 {
+                    format!("{}****{}", 
+                        &addr[..6],
+                        &addr[addr.len()-6..])
+                } else {
+                    addr
+                }
+            };
+            
+            let wallet_text = Paragraph::new(formatted_address)
                 .block(wallet_block)
-                .style(Style::default().fg(secondary_color));
+                .style(Style::default().fg(secondary_color))
+                .alignment(Alignment::Left);
             f.render_widget(wallet_text, left_chunks[0]);
+
+            // 代幣餘額顯示
+            let balance_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(50),
+                    Constraint::Percentage(50),
+                ])
+                .split(left_chunks[1]);
+
+            // SUI 餘額顯示
+            let sui_block = Block::default()
+                .title("SUI BALANCE")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(primary_color));
+            
+            let sui_text = Paragraph::new(format!("{:.2} SUI", app.sui_balance as f64 / 1_000_000_000.0))
+                .block(sui_block)
+                .style(Style::default().fg(secondary_color))
+                .alignment(Alignment::Left);
+            f.render_widget(sui_text, balance_chunks[0]);
+
+            // WAL 餘額顯示
+            let wal_block = Block::default()
+                .title("WAL BALANCE")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(primary_color));
+            
+            let wal_text = Paragraph::new(format!("{:.2} WAL", app.wal_balance as f64 / 1_000_000_000.0))
+                .block(wal_block)
+                .style(Style::default().fg(secondary_color))
+                .alignment(Alignment::Left);
+            f.render_widget(wal_text, balance_chunks[1]);
 
             // 印表機 ID 和工資顯示
             let printer_reward_chunks = Layout::default()
@@ -79,7 +132,7 @@ fn main() -> io::Result<()> {
                     Constraint::Percentage(50),
                     Constraint::Percentage(50),
                 ])
-                .split(left_chunks[1]);
+                .split(left_chunks[2]);
 
             // 印表機 ID
             let printer_block = Block::default()
@@ -137,7 +190,7 @@ fn main() -> io::Result<()> {
             let status = Paragraph::new(status_text)
                 .style(status_style)
                 .block(status_block);
-            f.render_widget(status, left_chunks[2]);
+            f.render_widget(status, left_chunks[3]);
 
             // 根據狀態顯示不同的列表
             if app.is_online {
@@ -148,7 +201,7 @@ fn main() -> io::Result<()> {
                         Constraint::Length(3),  // 當前打印任務
                         Constraint::Min(0),     // 歷史記錄
                     ])
-                    .split(left_chunks[3]);
+                    .split(left_chunks[4]);
 
                 // 顯示當前打印任務
                 let current_task = app.tasks
@@ -208,7 +261,7 @@ fn main() -> io::Result<()> {
                     .highlight_style(Style::default()
                         .add_modifier(Modifier::BOLD)
                         .fg(secondary_color));
-                f.render_stateful_widget(assets_list, left_chunks[3], &mut app.assets_state);
+                f.render_stateful_widget(assets_list, left_chunks[4], &mut app.assets_state);
             }
 
             // 操作提示
@@ -261,7 +314,7 @@ fn main() -> io::Result<()> {
             let help = Paragraph::new(help_text)
                 .block(help_block)
                 .style(Style::default().fg(accent_color));
-            f.render_widget(help, left_chunks[4]);
+            f.render_widget(help, left_chunks[5]);
 
             // 右側內容區
             let right_block = Block::default()
