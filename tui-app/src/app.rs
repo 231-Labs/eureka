@@ -35,9 +35,9 @@ impl App {
         let wallet = Wallet::new().await?;
         let wallet_address = wallet.get_active_address().await?.to_string();
         
-        // 獲取餘額
+        // get balance
         let sui_balance = wallet.get_sui_balance(wallet.get_active_address().await?).await?;
-        let wal_balance = 0; // 初始 WAL 餘額為 0
+        let wal_balance = wallet.get_walrus_balance(wallet.get_active_address().await?).await?;
         
         let mut app = App {
             wallet_address,

@@ -2,6 +2,7 @@ use anyhow::Result;
 use sui_sdk::types::base_types::SuiAddress;
 use sui_sdk::SuiClient;
 use crate::utils::setup_for_read;
+use crate::constants::WALRUS_COIN_TYPE;
 
 pub struct Wallet {
     client: SuiClient,
@@ -21,6 +22,13 @@ impl Wallet {
     pub async fn get_sui_balance(&self, address: SuiAddress) -> Result<u128> {
         let balance = self.client.coin_read_api()
             .get_balance(address, None)
+            .await?;
+        Ok(balance.total_balance)
+    }
+
+    pub async fn get_walrus_balance(&self, address: SuiAddress) -> Result<u128> {
+        let balance = self.client.coin_read_api()
+            .get_balance(address, Some(WALRUS_COIN_TYPE.to_string()))
             .await?;
         Ok(balance.total_balance)
     }
