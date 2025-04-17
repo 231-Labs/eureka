@@ -1,6 +1,6 @@
 use ratatui::widgets::ListState;
 use crate::wallet::Wallet;
-use crate::utils::NetworkState;
+use crate::utils::{NetworkState, shorten_id};
 use crate::constants::NETWORKS;
 use anyhow::Result;
 
@@ -39,16 +39,17 @@ impl App {
     pub async fn new() -> Result<App> {
         let network_state = NetworkState::new();
         let wallet = Wallet::new(&network_state).await?;
-        let wallet_address = wallet.get_active_address().await?.to_string();
+        let wallet_address = shorten_id(&wallet.get_active_address().await?.to_string());
         
-        // get balance
+        // get balance and printer id
         let sui_balance = wallet.get_sui_balance(wallet.get_active_address().await?).await?;
         let wal_balance = wallet.get_walrus_balance(wallet.get_active_address().await?).await?;
+        let printer_id = wallet.get_user_printer_id(wallet.get_active_address().await?).await?;
         
         let mut app = App {
             wallet,
             wallet_address,
-            printer_id: "Not Set".to_string(),
+            printer_id,
             is_online: false,
             assets: vec![
                 "3D Model #1 - Cute Cat".to_string(),
@@ -269,9 +270,10 @@ impl App {
     pub async fn update_network(&mut self) -> Result<()> {
         self.switch_network();
         self.wallet = Wallet::new(&self.network_state).await?;
-        self.wallet_address = self.wallet.get_active_address().await?.to_string();
+        self.wallet_address = shorten_id(&self.wallet.get_active_address().await?.to_string());
         self.sui_balance = self.wallet.get_sui_balance(self.wallet.get_active_address().await?).await?;
         self.wal_balance = self.wallet.get_walrus_balance(self.wallet.get_active_address().await?).await?;
+        self.printer_id = self.wallet.get_user_printer_id(self.wallet.get_active_address().await?).await?;
         Ok(())
     }
 

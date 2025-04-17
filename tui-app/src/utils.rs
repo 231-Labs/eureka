@@ -5,6 +5,14 @@ use sui_sdk::types::base_types::SuiAddress;
 use sui_sdk::wallet_context::WalletContext;
 use crate::constants::NETWORKS;
 
+pub fn shorten_id(id: &str) -> String {
+    if id.len() > 10 {
+        format!("{}..{}", &id[..6], &id[id.len()-6..])
+    } else {
+        id.to_string()
+    }
+}
+
 pub struct NetworkState {
     pub current_network: usize,
 }

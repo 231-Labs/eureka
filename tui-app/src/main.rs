@@ -45,8 +45,8 @@ async fn main() -> io::Result<()> {
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(80),
+                    Constraint::Percentage(25),
+                    Constraint::Percentage(75),
                 ])
                 .split(size);
 
@@ -77,18 +77,7 @@ async fn main() -> io::Result<()> {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(primary_color));
             
-            let formatted_address = {
-                let addr = app.wallet_address.clone();
-                if addr.len() > 12 {
-                    format!("{}****{}", 
-                        &addr[..6],
-                        &addr[addr.len()-6..])
-                } else {
-                    addr
-                }
-            };
-            
-            let wallet_text = Paragraph::new(formatted_address)
+            let wallet_text = Paragraph::new(app.wallet_address.clone())
                 .block(wallet_block)
                 .style(Style::default().fg(secondary_color))
                 .alignment(Alignment::Left);
@@ -165,7 +154,8 @@ async fn main() -> io::Result<()> {
                 .border_style(Style::default().fg(primary_color));
             let printer_text = Paragraph::new(app.printer_id.clone())
                 .block(printer_block)
-                .style(Style::default().fg(secondary_color));
+                .style(Style::default().fg(secondary_color))
+                .alignment(Alignment::Left);
             f.render_widget(printer_text, printer_reward_chunks[0]);
 
             // 可收穫工資
