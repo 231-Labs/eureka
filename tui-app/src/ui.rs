@@ -1,11 +1,13 @@
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph},
     Frame,
 };
+use std::time::{SystemTime, UNIX_EPOCH};
 use crate::app::App;
+use crate::constants::{EUREKA_FRAMES, BUILD_ON_SUI};
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     if app.is_registering_printer {
@@ -424,26 +426,174 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 }
 
 fn draw_printer_registration(f: &mut Frame, app: &App) {
-    let chunks = Layout::default()
+    // 設置黑底色彩
+    let base_color = if app.is_online { Color::Cyan } else { Color::Magenta };
+    let highlight_color = if app.is_online { Color::LightBlue } else { Color::LightRed };
+    let dim_color = if app.is_online { Color::DarkGray } else { Color::DarkGray };
+    
+    // 全屏佈局
+    let main_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(base_color));
+    f.render_widget(main_block, f.size());
+    
+    // 主佈局區域
+    let main_area = Layout::default()
         .direction(Direction::Vertical)
-        .margin(1)
+        .margin(2)
         .constraints([
-            Constraint::Min(0),
-            Constraint::Length(3),
+            Constraint::Length(8),  // EUREKA ASCII藝術
+            Constraint::Length(3),  // 太空船狀態信息
+            Constraint::Length(4),  // 打印機註冊信息
+            Constraint::Min(2),     // 輸入區域
+            Constraint::Length(1),  // 底部留白
+            Constraint::Length(3),  // 控制項信息
         ])
         .split(f.size());
-
-    // 註冊信息
-    let registration_text = format!("{}\n\nYour input: {}", app.printer_registration_message, app.printer_alias);
-    let registration = Paragraph::new(registration_text)
+    
+    // 根據當前時間選擇動畫框架
+    let time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    
+    let animation_frame = (time % 3) as usize;
+    
+    // 添加 EUREKA ASCII藝術
+    let ascii_art = Paragraph::new(EUREKA_FRAMES[animation_frame])
+        .style(Style::default().fg(highlight_color))
+        .alignment(Alignment::Center);
+    f.render_widget(ascii_art, main_area[0]);
+    
+    // 添加太空船狀態信息
+    let status_indicators = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(33),
+            Constraint::Percentage(34),
+            Constraint::Percentage(33),
+        ])
+        .split(main_area[1]);
+        
+    // 生命支持系統
+    let life_support = Paragraph::new("[■■■■■□□□□□] LIFE SUPPORT: NOMINAL")
+        .style(Style::default().fg(base_color))
+        .alignment(Alignment::Center);
+    f.render_widget(life_support, status_indicators[0]);
+    
+    // 導航系統
+    let navigation = Paragraph::new("[■■■■■■■□□□] NAVIGATION: STANDBY")
+        .style(Style::default().fg(base_color))
+        .alignment(Alignment::Center);
+    f.render_widget(navigation, status_indicators[1]);
+    
+    // 構建於Sui (替換原來的通訊系統)
+    let build_on_sui_text = format!("[■■■■■■■■□□] {} ", BUILD_ON_SUI.to_uppercase());
+    let build_on_sui = Paragraph::new(build_on_sui_text)
+        .style(Style::default().fg(base_color))
+        .alignment(Alignment::Center);
+    f.render_widget(build_on_sui, status_indicators[2]);
+    
+    // 添加註冊信息
+    let registration_block = Block::default()
+        .title(" << PRINTER REGISTRATION >> ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(base_color));
+    
+    let registration_text = vec![
+        Line::from(vec![
+            Span::styled(">> ", Style::default().fg(highlight_color)),
+            Span::styled("SYSTEM ALERT:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::raw(" 3D Printer Not Found"),
+        ]),
+        Line::from(vec![
+            Span::styled(">> ", Style::default().fg(highlight_color)),
+            Span::raw("Establish connection by registering your printer"),
+        ]),
+    ];
+    
+    let registration_para = Paragraph::new(registration_text)
         .style(Style::default().fg(Color::White))
-        .block(Block::default().borders(Borders::ALL));
-    f.render_widget(registration, chunks[0]);
-
-    // 提示信息
-    let help = Paragraph::new("Press Enter to register your printer")
-        .style(Style::default().fg(Color::Gray))
+        .alignment(Alignment::Left)
+        .block(registration_block);
+    f.render_widget(registration_para, main_area[2]);
+    
+    // 輸入區域
+    let input_area = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(3),
+            Constraint::Min(0),
+        ])
+        .split(main_area[3]);
+    
+    let input_prompt = Paragraph::new("ENTER PRINTER DESIGNATION:")
+        .style(Style::default().fg(highlight_color))
+        .alignment(Alignment::Left);
+    f.render_widget(input_prompt, input_area[0]);
+    
+    // 輸入框
+    let input_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(base_color));
+    
+    let blink_cursor = time % 2 == 0;
+    let cursor = if blink_cursor { "█" } else { " " };
+    
+    let input_text = format!("{}{}",
+        app.printer_alias,
+        if blink_cursor && app.printer_alias.len() < 30 { cursor } else { "" }
+    );
+    
+    let input = Paragraph::new(input_text)
+        .style(Style::default().fg(Color::White))
+        .block(input_block);
+    f.render_widget(input, input_area[1]);
+    
+    // 控制項信息
+    let help_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(dim_color));
+    
+    let help_text = vec![
+        Line::from(vec![
+            Span::styled("ENTER", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+            Span::raw(" to confirm"),
+            Span::raw("   "),
+            Span::styled("BACKSPACE", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+            Span::raw(" to edit"),
+            Span::raw("   "),
+            Span::styled("Q/ESC", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+            Span::raw(" to quit"),
+        ]),
+    ];
+    
+    let help = Paragraph::new(help_text)
+        .style(Style::default().fg(dim_color))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL));
-    f.render_widget(help, chunks[1]);
+        .block(help_block);
+    f.render_widget(help, main_area[5]);
+    
+    // 模擬太空船環境噪音效果 - 在不同位置添加隨機"雜訊"
+    for _ in 0..15 {
+        let noise_char = match time % 3 {
+            0 => "▓",
+            1 => "▒",
+            _ => "░",
+        };
+        
+        let x = (time * 7 + 11) % (f.size().width as u64 - 4) + 2;
+        let y = (time * 13 + 5) % (f.size().height as u64 - 4) + 2;
+        
+        if x < f.size().width as u64 && y < f.size().height as u64 {
+            let noise = Paragraph::new(noise_char)
+                .style(Style::default().fg(dim_color));
+            f.render_widget(noise, Rect::new(x as u16, y as u16, 1, 1));
+        }
+    }
 } 

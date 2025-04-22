@@ -61,6 +61,8 @@ async fn run_app<B: ratatui::backend::Backend>(
                 if app.is_registering_printer {
                     // 在註冊畫面時，只處理註冊相關的按鍵
                     match key.code {
+                        KeyCode::Char('q') => return Ok(()),
+                        KeyCode::Esc => return Ok(()),
                         KeyCode::Char(c) => {
                             app.handle_printer_registration_input(c);
                         }
@@ -76,6 +78,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                     // 在主畫面時，處理所有快捷鍵
                     match key.code {
                         KeyCode::Char('q') => return Ok(()),
+                        KeyCode::Esc => return Ok(()),
                         KeyCode::Up => app.previous_item(),
                         KeyCode::Down => app.next_item(),
                         KeyCode::Char('o') => {
