@@ -21,3 +21,6 @@ node_modules/
 # System files
 .DS_Store
 Thumbs.db
+
+# Ignore sui-examples directory
+sui-examples/
