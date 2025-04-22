@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use sui_sdk::{
     types::{
         base_types::{ObjectID, SuiAddress},
@@ -9,11 +8,12 @@ use sui_sdk::{
     rpc_types::{SuiObjectDataOptions, SuiTransactionBlockResponseOptions},
     SuiClient,
 };
-use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
 use sui_types::{
+    object::Owner,
     quorum_driver_types::ExecuteTransactionRequestType,
-    transaction::{Argument, CallArg, Command},
+    transaction::{Argument, CallArg, Command}
 };
+use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
 use shared_crypto::intent::Intent;
 use std::path::PathBuf;
 use anyhow::{anyhow, Result};
@@ -45,13 +45,28 @@ impl TransactionBuilder {
         let coin = coins.data.into_iter().next()
             .ok_or_else(|| anyhow!("No available coins found"))?;
 
+        let registry = self.sui_client
+            .read_api()
+            .get_object_with_options(registry_id, SuiObjectDataOptions {
+                show_owner: true,
+                ..Default::default()
+            })
+            .await?
+            .data
+            .ok_or_else(|| anyhow!("Registry object initial_shared_version not found"))?;
+
         // 創建可編程交易構建器
         let mut ptb = ProgrammableTransactionBuilder::new();
 
-        // 使用固定的初始共享版本 18
+        // 獲取初始共享版本
+        let initial_shared_version = match registry.owner {
+            Some(Owner::Shared { initial_shared_version }) => initial_shared_version,
+            _ => return Err(anyhow!("Registry is not a shared object")),
+        };
+
         ptb.input(CallArg::Object(sui_sdk::types::transaction::ObjectArg::SharedObject {
             id: registry_id,
-            initial_shared_version: 18.into(),  // TODO:使用固定的初始共享版本, 後續改為動態
+            initial_shared_version: initial_shared_version.into(),
             mutable: true,
         }))?;
 

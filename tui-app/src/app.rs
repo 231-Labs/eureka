@@ -361,16 +361,13 @@ impl App {
                     self.registration_status = RegistrationStatus::Submitting;
                     self.printer_registration_message = "Sending transaction to network...\nPlease wait...".to_string();
                     
-                    println!("DEBUG: Creating TransactionBuilder");
                     let builder = TransactionBuilder::new(
                         self.wallet.get_client().clone(),
                         ObjectID::from(self.wallet.get_active_address().await?)
                     ).await;
 
-                    println!("DEBUG: TransactionBuilder created, sending transaction");
                     self.printer_registration_message = "Transaction sent. Waiting for confirmation...\nThis may take a few seconds...".to_string();
 
-                    println!("DEBUG: Calling register_printer");
                     match builder.register_printer(
                         EUREKA_DEVNET_PRINTER_REGISTRY_ID.parse()?,
                         &self.printer_alias
