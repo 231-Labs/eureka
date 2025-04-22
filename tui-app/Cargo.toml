@@ -9,6 +9,10 @@ crossterm = "0.27.0"
 sui-sdk = { git = "https://github.com/MystenLabs/sui", branch = "main" }
 sui-config = { git = "https://github.com/MystenLabs/sui", branch = "main" }
 sui-keys = { git = "https://github.com/MystenLabs/sui", branch = "main" }
+sui-types = { git = "https://github.com/MystenLabs/sui", branch = "main" }
+shared-crypto = { git = "https://github.com/MystenLabs/sui", branch = "main" }
+bcs = "0.1.6"
+serde_json = "1.0"
 tokio = { version = "1.2", features = ["full"] }
 anyhow = "1.0"
 dirs = "6.0.0"

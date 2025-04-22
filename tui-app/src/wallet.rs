@@ -16,6 +16,10 @@ impl Wallet {
         Ok(Wallet { client, address })
     }
 
+    pub fn get_client(&self) -> &SuiClient {
+        &self.client
+    }
+
     pub async fn get_active_address(&self) -> Result<SuiAddress> {
         Ok(self.address)
     }

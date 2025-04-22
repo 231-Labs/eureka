@@ -1,8 +1,10 @@
 use ratatui::widgets::ListState;
 use crate::wallet::Wallet;
 use crate::utils::{NetworkState, shorten_id};
-use crate::constants::NETWORKS;
+use crate::constants::{NETWORKS, EUREKA_DEVNET_PRINTER_REGISTRY_ID};
 use anyhow::Result;
+use crate::transactions::TransactionBuilder;
+use sui_sdk::types::base_types::ObjectID;
 
 #[derive(Clone)]
 pub enum TaskStatus {
@@ -15,6 +17,14 @@ pub struct PrintTask {
     pub id: String,
     pub name: String,
     pub status: TaskStatus,
+}
+
+#[derive(Clone, PartialEq)]
+pub enum RegistrationStatus {
+    Inputting,
+    Submitting,
+    Success(String),  // 包含 printer_id
+    Failed(String),   // 包含錯誤信息
 }
 
 pub struct App {
@@ -41,6 +51,7 @@ pub struct App {
     pub is_registering_printer: bool,
     pub printer_alias: String,
     pub printer_registration_message: String,
+    pub registration_status: RegistrationStatus,  // 新增狀態字段
 }
 
 impl App {
@@ -173,6 +184,7 @@ impl App {
             is_registering_printer: false,
             printer_alias: String::new(),
             printer_registration_message: String::new(),
+            registration_status: RegistrationStatus::Inputting,
         };
         
         // 檢查是否需要註冊打印機
@@ -342,25 +354,63 @@ impl App {
     }
 
     // 新增打印機註冊相關方法
-    pub fn handle_printer_registration_input(&mut self, input: char) {
+    pub async fn handle_printer_registration_input(&mut self, input: char) -> Result<()> {
         match input {
             '\n' => {
-                if !self.printer_alias.is_empty() {
-                    // TODO: 調用智能合約鑄造 Printer Object
-                    self.printer_registration_message = format!("Registering printer with alias: {}\n\nPlease wait...", self.printer_alias);
-                    // 模擬註冊成功
-                    self.printer_id = "0x64a8982336ac12bd081ac9f7c646e5bf88523839fd66fb38e2f92884bfcd1999".to_string();
+                if !self.printer_alias.is_empty() && self.registration_status == RegistrationStatus::Inputting {
+                    self.registration_status = RegistrationStatus::Submitting;
+                    self.printer_registration_message = "Sending transaction to network...\nPlease wait...".to_string();
+                    
+                    println!("DEBUG: Creating TransactionBuilder");
+                    let builder = TransactionBuilder::new(
+                        self.wallet.get_client().clone(),
+                        ObjectID::from(self.wallet.get_active_address().await?)
+                    ).await;
+
+                    println!("DEBUG: TransactionBuilder created, sending transaction");
+                    self.printer_registration_message = "Transaction sent. Waiting for confirmation...\nThis may take a few seconds...".to_string();
+
+                    println!("DEBUG: Calling register_printer");
+                    match builder.register_printer(
+                        EUREKA_DEVNET_PRINTER_REGISTRY_ID.parse()?,
+                        &self.printer_alias
+                    ).await {
+                        Ok(tx_digest) => {
+                            self.printer_id = tx_digest.clone();
+                            self.registration_status = RegistrationStatus::Success(tx_digest.clone());
+                            self.printer_registration_message = format!(
+                                "Registration Successful!\n\n\
+                                 Printer Name: {}\n\
+                                 Transaction ID: {}\n\n\
+                                 Press ENTER to continue...",
+                                self.printer_alias,
+                                tx_digest
+                            );
+                        }
+                        Err(e) => {
+                            self.error_message = Some(format!("Registration failed: {}", e));
+                            self.registration_status = RegistrationStatus::Failed(e.to_string());
+                            self.printer_registration_message = "Registration failed. Press ESC to exit, or try registering again...".to_string();
+                        }
+                    };
+                } else if matches!(self.registration_status, RegistrationStatus::Success(_)) {
+                    // 只有在成功狀態下按 Enter 才會退出註冊頁面
                     self.is_registering_printer = false;
                 }
             }
             '\x08' | '\x7f' => {
-                self.printer_alias.pop();
+                if self.registration_status == RegistrationStatus::Inputting {
+                    self.printer_alias.pop();
+                }
             }
             c if c.is_ascii() && !c.is_control() => {
-                self.printer_alias.push(c);
+                if self.registration_status == RegistrationStatus::Inputting && self.printer_alias.len() < 30 {
+                    self.printer_alias.push(c);
+                }
             }
             _ => {}
         }
+        Ok(())
     }
 
     // pub async fn get_wallet_balance(&self) -> Result<u128> {

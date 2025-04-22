@@ -15,6 +15,7 @@ mod constants;
 mod utils;
 mod wallet;
 mod ui;
+mod transactions;
 
 use app::App;
 
@@ -64,13 +65,19 @@ async fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Char('q') => return Ok(()),
                         KeyCode::Esc => return Ok(()),
                         KeyCode::Char(c) => {
-                            app.handle_printer_registration_input(c);
+                            if let Err(e) = app.handle_printer_registration_input(c).await {
+                                app.error_message = Some(format!("Error: {}", e));
+                            }
                         }
                         KeyCode::Backspace => {
-                            app.handle_printer_registration_input('\x08');
+                            if let Err(e) = app.handle_printer_registration_input('\x08').await {
+                                app.error_message = Some(format!("Error: {}", e));
+                            }
                         }
                         KeyCode::Enter => {
-                            app.handle_printer_registration_input('\n');
+                            if let Err(e) = app.handle_printer_registration_input('\n').await {
+                                app.error_message = Some(format!("Error: {}", e));
+                            }
                         }
                         _ => {}
                     }

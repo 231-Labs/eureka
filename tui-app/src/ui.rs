@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::app::App;
+use crate::app::{App, RegistrationStatus};
 use crate::constants::{EUREKA_FRAMES, BUILD_ON_SUI};
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -443,12 +443,12 @@ fn draw_printer_registration(f: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .margin(2)
         .constraints([
-            Constraint::Length(8),  // EUREKA ASCII藝術
-            Constraint::Length(3),  // 太空船狀態信息
-            Constraint::Length(4),  // 打印機註冊信息
-            Constraint::Min(2),     // 輸入區域
-            Constraint::Length(1),  // 底部留白
-            Constraint::Length(3),  // 控制項信息
+            Constraint::Length(8),   // EUREKA ASCII藝術
+            Constraint::Length(3),   // 太空船狀態信息
+            Constraint::Min(3),      // 打印機註冊信息
+            Constraint::Length(3),   // 輸入區域（增加高度）
+            Constraint::Length(1),   // 底部留白
+            Constraint::Length(3),   // 控制項信息
         ])
         .split(f.size());
     
@@ -497,24 +497,103 @@ fn draw_printer_registration(f: &mut Frame, app: &App) {
         .alignment(Alignment::Center);
     f.render_widget(wallet_info, status_indicators[2]);
     
-    // 添加註冊信息
+    // 添加註冊信息區
     let registration_block = Block::default()
-        .title(" << PRINTER REGISTRATION >> ")
+        .title(" << SYSTEM STATUS >> ")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(base_color));
     
-    let registration_text = vec![
+    // 根據不同的註冊階段顯示不同的信息
+    let mut registration_text = vec![
         Line::from(vec![
             Span::styled(">> ", Style::default().fg(highlight_color)),
-            Span::styled("SYSTEM ALERT:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::raw(" 3D Printer Not Found"),
-        ]),
-        Line::from(vec![
-            Span::styled(">> ", Style::default().fg(highlight_color)),
-            Span::raw("Establish connection by registering your printer"),
+            Span::styled("SYSTEM STATUS", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
         ]),
     ];
+
+    // 添加狀態信息
+    match &app.registration_status {
+        RegistrationStatus::Inputting => {
+            registration_text.extend(vec![
+                Line::from(vec![
+                    Span::styled(">> ", Style::default().fg(highlight_color)),
+                    Span::raw("3D Printer Not Found"),
+                ]),
+                Line::from(vec![
+                    Span::styled(">> ", Style::default().fg(highlight_color)),
+                    Span::raw("Establish connection by registering your printer"),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("STATUS: ", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+                    Span::raw("Please enter your printer alias below."),
+                ]),
+            ]);
+        }
+        RegistrationStatus::Submitting => {
+            registration_text.extend(vec![
+                Line::from(vec![
+                    Span::styled(">> ", Style::default().fg(highlight_color)),
+                    Span::raw("Processing Registration"),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("STATUS: ", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+                    Span::styled("⟳ ", Style::default().fg(Color::Yellow)),
+                    Span::raw("Sending transaction to network..."),
+                ]),
+                Line::from(vec![
+                    Span::raw("Please wait while we process your registration."),
+                ]),
+            ]);
+        }
+        RegistrationStatus::Success(tx_id) => {
+            registration_text.extend(vec![
+                Line::from(vec![
+                    Span::styled(">> ", Style::default().fg(highlight_color)),
+                    Span::styled("✓ ", Style::default().fg(Color::Green)),
+                    Span::styled("Registration Successful!", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("Printer Name: ", Style::default().fg(highlight_color)),
+                    Span::raw(&app.printer_alias),
+                ]),
+                Line::from(vec![
+                    Span::styled("Printer ID: ", Style::default().fg(highlight_color)),
+                    Span::raw(&app.printer_id),
+                ]),
+                Line::from(vec![
+                    Span::styled("Transaction: ", Style::default().fg(highlight_color)),
+                    Span::raw(tx_id),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled(">> ", Style::default().fg(highlight_color)),
+                    Span::styled("Press any key to continue...", Style::default().fg(Color::Yellow)),
+                ]),
+            ]);
+        }
+        RegistrationStatus::Failed(_) => {
+            registration_text.extend(vec![
+                Line::from(vec![
+                    Span::styled(">> ", Style::default().fg(highlight_color)),
+                    Span::styled("✗ ", Style::default().fg(Color::Red)),
+                    Span::styled("Registration Failed", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                ]),
+            ]);
+        }
+    };
+
+    // 如果有錯誤信息，添加到註冊信息中
+    if let Some(error) = &app.error_message {
+        registration_text.push(Line::from(""));
+        registration_text.push(Line::from(vec![
+            Span::styled("ERROR: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(error, Style::default().fg(Color::Red)),
+        ]));
+    }
     
     let registration_para = Paragraph::new(registration_text)
         .style(Style::default().fg(Color::White))
@@ -526,35 +605,43 @@ fn draw_printer_registration(f: &mut Frame, app: &App) {
     let input_area = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
-            Constraint::Length(3),
-            Constraint::Min(0),
+            Constraint::Length(1),   // 提示文字
+            Constraint::Min(3),      // 輸入框（增加最小高度）
         ])
         .split(main_area[3]);
     
-    let input_prompt = Paragraph::new("ENTER PRINTER ALIAS:")
-        .style(Style::default().fg(highlight_color))
-        .alignment(Alignment::Left);
+    let input_prompt = if matches!(app.registration_status, RegistrationStatus::Inputting) {
+        Paragraph::new("ENTER PRINTER ALIAS:")
+            .style(Style::default().fg(highlight_color))
+            .alignment(Alignment::Left)
+    } else {
+        Paragraph::new("")
+            .style(Style::default().fg(highlight_color))
+            .alignment(Alignment::Left)
+    };
     f.render_widget(input_prompt, input_area[0]);
     
-    // 輸入框
-    let input_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(base_color));
-    
-    let blink_cursor = time % 2 == 0;
-    let cursor = if blink_cursor { "█" } else { " " };
-    
-    let input_text = format!("{}{}",
-        app.printer_alias,
-        if blink_cursor && app.printer_alias.len() < 30 { cursor } else { "" }
-    );
-    
-    let input = Paragraph::new(input_text)
-        .style(Style::default().fg(Color::White))
-        .block(input_block);
-    f.render_widget(input, input_area[1]);
+    // 只在輸入狀態下顯示輸入框
+    if matches!(app.registration_status, RegistrationStatus::Inputting) {
+        // 輸入框
+        let input_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(base_color));
+        
+        let blink_cursor = time % 2 == 0;
+        let cursor = if blink_cursor { "█" } else { " " };
+        
+        let input_text = format!("{}{}",
+            app.printer_alias,
+            if app.registration_status == RegistrationStatus::Inputting && app.printer_alias.len() < 30 { cursor } else { "" }
+        );
+        
+        let input = Paragraph::new(input_text)
+            .style(Style::default().fg(Color::White))
+            .block(input_block);
+        f.render_widget(input, input_area[1]);
+    }
     
     // 控制項信息
     let help_block = Block::default()
@@ -598,4 +685,4 @@ fn draw_printer_registration(f: &mut Frame, app: &App) {
             f.render_widget(noise, Rect::new(x as u16, y as u16, 1, 1));
         }
     }
-} 
+}
