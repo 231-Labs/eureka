@@ -37,6 +37,10 @@ pub struct App {
     // 新增機器狀態字段
     pub nozzle_temp: f32,      // 噴嘴溫度
     pub bed_temp: f32,         // 加熱板溫度
+    // 新增打印機註冊相關狀態
+    pub is_registering_printer: bool,
+    pub printer_alias: String,
+    pub printer_registration_message: String,
 }
 
 impl App {
@@ -48,12 +52,17 @@ impl App {
         // get balance and printer id
         let sui_balance = wallet.get_sui_balance(wallet.get_active_address().await?).await?;
         let wal_balance = wallet.get_walrus_balance(wallet.get_active_address().await?).await?;
-        let printer_id = wallet.get_user_printer_id(wallet.get_active_address().await?).await?;
+        let printer_id = match wallet.get_user_printer_id(wallet.get_active_address().await?).await {
+            Ok(id) => id,
+            Err(_e) => {
+                "No Printer ID".to_string()
+            }
+        };
         
         let mut app = App {
             wallet,
             wallet_address,
-            printer_id,
+            printer_id: printer_id.clone(),
             is_online: false,
             assets: vec![
                 "3D Model #1 - Cute Cat".to_string(),
@@ -161,7 +170,16 @@ impl App {
             error_message: None,  // 初始化為 None
             nozzle_temp: 0.0,
             bed_temp: 0.0,
+            is_registering_printer: false,
+            printer_alias: String::new(),
+            printer_registration_message: String::new(),
         };
+        
+        // 檢查是否需要註冊打印機
+        if printer_id == "No Printer ID" {
+            app.is_registering_printer = true;
+            app.printer_registration_message = "Welcome to Eureka 3D Printing Platform!\n\nNo printer found. Please register your printer to continue.\n\nEnter your printer alias:".to_string();
+        }
         
         // 設置初始選中項
         app.assets_state.select(Some(0));
@@ -313,14 +331,36 @@ impl App {
 
     pub fn get_network_options(&self) -> String {
         format!("1) {}  2) {}  3) {}", 
-            NETWORKS[1].0.to_uppercase(),  // TESTNET
             NETWORKS[2].0.to_uppercase(),  // MAINNET
-            NETWORKS[0].0.to_uppercase()   // DEVNET
+            NETWORKS[0].0.to_uppercase(),  // TESTNET
+            NETWORKS[1].0.to_uppercase()   // DEVNET
         )
     }
 
     pub fn clear_error(&mut self) {
         self.error_message = None;
+    }
+
+    // 新增打印機註冊相關方法
+    pub fn handle_printer_registration_input(&mut self, input: char) {
+        match input {
+            '\n' => {
+                if !self.printer_alias.is_empty() {
+                    // TODO: 調用智能合約鑄造 Printer Object
+                    self.printer_registration_message = format!("Registering printer with alias: {}\n\nPlease wait...", self.printer_alias);
+                    // 模擬註冊成功
+                    self.printer_id = "0x64a8982336ac12bd081ac9f7c646e5bf88523839fd66fb38e2f92884bfcd1999".to_string();
+                    self.is_registering_printer = false;
+                }
+            }
+            '\x08' | '\x7f' => {
+                self.printer_alias.pop();
+            }
+            c if c.is_ascii() && !c.is_control() => {
+                self.printer_alias.push(c);
+            }
+            _ => {}
+        }
     }
 
     // pub async fn get_wallet_balance(&self) -> Result<u128> {
