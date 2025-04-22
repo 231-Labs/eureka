@@ -476,24 +476,26 @@ fn draw_printer_registration(f: &mut Frame, app: &App) {
         ])
         .split(main_area[1]);
         
-    // 生命支持系統
-    let life_support = Paragraph::new("[■■■■■□□□□□] LIFE SUPPORT: NOMINAL")
+    // 顯示當前網路環境
+    let network_status = format!("[■■■■■□□□□□] NETWORK: {}", app.network_state.get_current_network().to_uppercase());
+    let network_info = Paragraph::new(network_status)
         .style(Style::default().fg(base_color))
         .alignment(Alignment::Center);
-    f.render_widget(life_support, status_indicators[0]);
+    f.render_widget(network_info, status_indicators[0]);
     
-    // 導航系統
-    let navigation = Paragraph::new("[■■■■■■■□□□] NAVIGATION: STANDBY")
-        .style(Style::default().fg(base_color))
-        .alignment(Alignment::Center);
-    f.render_widget(navigation, status_indicators[1]);
-    
-    // 構建於Sui (替換原來的通訊系統)
-    let build_on_sui_text = format!("[■■■■■■■■□□] {} ", BUILD_ON_SUI.to_uppercase());
+    // 構建於Sui
+    let build_on_sui_text = format!("╔══════╡ {} ╞══════╗", BUILD_ON_SUI.to_uppercase());
     let build_on_sui = Paragraph::new(build_on_sui_text)
         .style(Style::default().fg(base_color))
         .alignment(Alignment::Center);
-    f.render_widget(build_on_sui, status_indicators[2]);
+    f.render_widget(build_on_sui, status_indicators[1]);
+    
+    // 顯示錢包地址
+    let wallet_status = format!("[■■■■■■■□□□] WALLET: {}", app.wallet_address);
+    let wallet_info = Paragraph::new(wallet_status)
+        .style(Style::default().fg(base_color))
+        .alignment(Alignment::Center);
+    f.render_widget(wallet_info, status_indicators[2]);
     
     // 添加註冊信息
     let registration_block = Block::default()
@@ -530,7 +532,7 @@ fn draw_printer_registration(f: &mut Frame, app: &App) {
         ])
         .split(main_area[3]);
     
-    let input_prompt = Paragraph::new("ENTER PRINTER DESIGNATION:")
+    let input_prompt = Paragraph::new("ENTER PRINTER ALIAS:")
         .style(Style::default().fg(highlight_color))
         .alignment(Alignment::Left);
     f.render_widget(input_prompt, input_area[0]);

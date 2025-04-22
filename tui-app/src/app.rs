@@ -6,7 +6,7 @@ use anyhow::Result;
 
 #[derive(Clone)]
 pub enum TaskStatus {
-    Printing(u8),  // 進度百分比
+    Printing(u8),
     Completed,
 }
 

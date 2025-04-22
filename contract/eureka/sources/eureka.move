@@ -26,6 +26,7 @@ module eureka::eureka {
     public struct Printer has key {
         id: UID,
         owner: address,
+        alias: String,
         status: String,
         price: u64,
         earnings: Balance<SUI>,
@@ -92,6 +93,7 @@ module eureka::eureka {
     #[allow(lint(self_transfer))]
     public entry fun register_printer(
         state: &mut PrinterRegisty,
+        alias: String,
         price: u64,
         ctx: &mut TxContext,
     ) {
@@ -100,6 +102,7 @@ module eureka::eureka {
         let printer = Printer {
             id: object::new(ctx),
             owner: sender,
+            alias,  
             status: std::string::utf8(PRINTER_STATUS_OFFLINE),
             price,
             earnings: balance::zero(),
