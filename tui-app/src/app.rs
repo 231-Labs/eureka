@@ -3,6 +3,7 @@ use crate::wallet::Wallet;
 use crate::utils::{NetworkState, shorten_id};
 use crate::constants::NETWORKS;
 use anyhow::Result;
+use std::process::Command;
 
 #[derive(Clone)]
 pub enum TaskStatus {
@@ -363,6 +364,21 @@ impl App {
         }
     }
 
+
+    pub fn run_custom_script(&mut self) {   //處理S按鈕被按下的功能 1.執行腳本開始列印 2.錯誤訊息顯示
+        
+        if let Err(e) = Command::new("sh").arg("path/to/your_script.sh").status() {
+
+            self.error_message = Some(format!("Script failed: {}", e)); //錯誤訊息顯示
+            
+        } else {
+
+            self.error_message = Some("Script executed.".to_string());  //正確訊息顯示
+
+        }
+    }
+
+    
     // pub async fn get_wallet_balance(&self) -> Result<u128> {
     //     if let Some(wallet) = &self.wallet {
     //         let address = wallet.get_active_address().await?;
