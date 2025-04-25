@@ -128,6 +128,11 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 app.confirm_harvest();
                             }
                         }
+                        KeyCode::Char('s') => {
+
+                            app.run_custom_script();        // 3D列印機輸出
+
+                        }
                         _ => {}
                     }
                 }
