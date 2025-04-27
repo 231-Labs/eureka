@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::app::{App, RegistrationStatus};
+use crate::app::{App, RegistrationStatus, MessageType};
 use crate::constants::{EUREKA_FRAMES, BUILD_ON_SUI};
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -382,17 +382,22 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     // 錯誤訊息區域
     if let Some(error) = &app.error_message {
-        let error_block = Block::default()
-            .title("ERROR")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Red));
+        let (title, style) = match app.message_type {
+            MessageType::Error => ("ERROR", Style::default().fg(Color::Red)),
+            MessageType::Info => ("MESSAGE", Style::default().fg(Color::Green)),
+        };
 
-        let error_text = Paragraph::new(error.clone())
-            .style(Style::default().fg(Color::Red))
-            .block(error_block)
+        let message_block = Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(style);
+
+        let message_text = Paragraph::new(error.clone())
+            .style(style)
+            .block(message_block)
             .alignment(Alignment::Left);
 
-        f.render_widget(error_text, right_area[0]);
+        f.render_widget(message_text, right_area[0]);
     }
 
     // 機器狀態區域

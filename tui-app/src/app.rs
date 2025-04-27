@@ -28,6 +28,12 @@ pub enum RegistrationStatus {
     Failed(String),   // Contains error message
 }
 
+#[derive(Clone, PartialEq)]
+pub enum MessageType {
+    Error,
+    Info,
+}
+
 pub struct App {
     pub wallet: Wallet,
     pub wallet_address: String,
@@ -45,6 +51,7 @@ pub struct App {
     pub wal_balance: u128,
     pub network_state: NetworkState,
     pub error_message: Option<String>,  // Error message field
+    pub message_type: MessageType,      // Message type field
     // Machine status fields
     pub nozzle_temp: f32,      // Nozzle temperature
     pub bed_temp: f32,         // Bed temperature
@@ -180,6 +187,7 @@ impl App {
             wal_balance,
             network_state,
             error_message: None,  // Initialize as None
+            message_type: MessageType::Info, // Initialize as Info
             nozzle_temp: 0.0,
             bed_temp: 0.0,
             is_registering_printer: false,
@@ -413,16 +421,29 @@ impl App {
 
     //Start-New
     pub fn run_custom_script(&mut self) {   //處理S按鈕被按下的功能 1.執行腳本開始列印 2.錯誤訊息顯示
-        
-        if let Err(e) = Command::new("sh").arg("path/to/your_script.sh").status() {
-
-            self.error_message = Some(format!("Script failed: {}", e)); //錯誤訊息顯示
-
-        } else {
-
-            self.error_message = Some("Script executed.".to_string());  //正確訊息顯示
-
-        }
+        match Command::new("sh")
+            .current_dir("Gcode-Transmit")  // 設置當前工作目錄
+            .arg("Gcode-Send.sh")
+            .output() {
+                Ok(output) => {
+                    if !output.status.success() {
+                        if let Ok(error) = String::from_utf8(output.stderr) {
+                            self.message_type = MessageType::Error;
+                            self.error_message = Some(format!("Script failed: {}", error));
+                        } else {
+                            self.message_type = MessageType::Error;
+                            self.error_message = Some("Script failed with non-utf8 error".to_string());
+                        }
+                    } else {
+                        self.message_type = MessageType::Info;
+                        self.error_message = Some("Printing...".to_string());
+                    }
+                }
+                Err(e) => {
+                    self.message_type = MessageType::Error;
+                    self.error_message = Some(format!("Failed to execute script: {}", e));
+                }
+            }
     }
     //End
     
