@@ -347,6 +347,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 Span::raw("  |  "),
                 Span::styled("H", Style::default().fg(secondary_color)),
                 Span::raw(" HARVEST REWARDS"),
+                Span::raw("  |  "),
+                Span::styled("S", Style::default().fg(secondary_color)),
+                Span::raw(" 3D Print"),
             ]),
         ]
     };
