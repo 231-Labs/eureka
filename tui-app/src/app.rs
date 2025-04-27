@@ -364,20 +364,20 @@ impl App {
         }
     }
 
-
+    //Start-New
     pub fn run_custom_script(&mut self) {   //處理S按鈕被按下的功能 1.執行腳本開始列印 2.錯誤訊息顯示
         
         if let Err(e) = Command::new("sh").arg("path/to/your_script.sh").status() {
 
             self.error_message = Some(format!("Script failed: {}", e)); //錯誤訊息顯示
-            
+
         } else {
 
             self.error_message = Some("Script executed.".to_string());  //正確訊息顯示
 
         }
     }
-
+    //End
     
     // pub async fn get_wallet_balance(&self) -> Result<u128> {
     //     if let Some(wallet) = &self.wallet {
