@@ -23,8 +23,8 @@ pub struct PrintTask {
 pub enum RegistrationStatus {
     Inputting,
     Submitting,
-    Success(String),  // 包含 printer_id
-    Failed(String),   // 包含錯誤信息
+    Success(String),  // Contains printer_id
+    Failed(String),   // Contains error message
 }
 
 pub struct App {
@@ -43,15 +43,15 @@ pub struct App {
     pub sui_balance: u128,
     pub wal_balance: u128,
     pub network_state: NetworkState,
-    pub error_message: Option<String>,  // 新增錯誤訊息欄位
-    // 新增機器狀態字段
-    pub nozzle_temp: f32,      // 噴嘴溫度
-    pub bed_temp: f32,         // 加熱板溫度
-    // 新增打印機註冊相關狀態
+    pub error_message: Option<String>,  // Error message field
+    // Machine status fields
+    pub nozzle_temp: f32,      // Nozzle temperature
+    pub bed_temp: f32,         // Bed temperature
+    // Printer registration related status
     pub is_registering_printer: bool,
     pub printer_alias: String,
     pub printer_registration_message: String,
-    pub registration_status: RegistrationStatus,  // 新增狀態字段
+    pub registration_status: RegistrationStatus,  // Status field
 }
 
 impl App {
@@ -60,7 +60,7 @@ impl App {
         let wallet = Wallet::new(&network_state).await?;
         let wallet_address = shorten_id(&wallet.get_active_address().await?.to_string());
         
-        // get balance and printer id
+        // Get balance and printer id
         let sui_balance = wallet.get_sui_balance(wallet.get_active_address().await?).await?;
         let wal_balance = wallet.get_walrus_balance(wallet.get_active_address().await?).await?;
         let printer_id = match wallet.get_user_printer_id(wallet.get_active_address().await?).await {
@@ -178,7 +178,7 @@ impl App {
             sui_balance,
             wal_balance,
             network_state,
-            error_message: None,  // 初始化為 None
+            error_message: None,  // Initialize as None
             nozzle_temp: 0.0,
             bed_temp: 0.0,
             is_registering_printer: false,
@@ -187,13 +187,13 @@ impl App {
             registration_status: RegistrationStatus::Inputting,
         };
         
-        // 檢查是否需要註冊打印機
+        // Check if printer registration is needed
         if printer_id == "No Printer ID" {
             app.is_registering_printer = true;
             app.printer_registration_message = "Welcome to Eureka 3D Printing Platform!\n\nNo printer found. Please register your printer to continue.\n\nEnter your printer alias:".to_string();
         }
         
-        // 設置初始選中項
+        // Set initial selection
         app.assets_state.select(Some(0));
         app.tasks_state.select(Some(0));
         Ok(app)
@@ -239,7 +239,7 @@ impl App {
             let i = match self.tasks_state.selected() {
                 Some(i) => {
                     if i >= items_len - 1 {
-                        i  // 已經到底部，保持當前位置
+                        i  // Already at the bottom, keep current position
                     } else {
                         i + 1
                     }
@@ -251,7 +251,7 @@ impl App {
             let i = match self.assets_state.selected() {
                 Some(i) => {
                     if i >= items_len - 1 {
-                        i  // 已經到底部，保持當前位置
+                        i  // Already at the bottom, keep current position
                     } else {
                         i + 1
                     }
@@ -277,7 +277,7 @@ impl App {
             let i = match self.tasks_state.selected() {
                 Some(i) => {
                     if i == 0 {
-                        0  // 已經到頂部，保持當前位置
+                        0  // Already at the top, keep current position
                     } else {
                         i - 1
                     }
@@ -289,7 +289,7 @@ impl App {
             let i = match self.assets_state.selected() {
                 Some(i) => {
                     if i == 0 {
-                        0  // 已經到頂部，保持當前位置
+                        0  // Already at the top, keep current position
                     } else {
                         i - 1
                     }
@@ -306,13 +306,13 @@ impl App {
 
     pub async fn update_network(&mut self) -> Result<()> {
         self.switch_network();
-        self.error_message = None;  // 清除之前的錯誤訊息
+        self.error_message = None;  // Clear previous error message
         
         match self.do_update_network().await {
             Ok(_) => Ok(()),
             Err(e) => {
-                self.error_message = Some(e.to_string());  // 儲存錯誤訊息
-                Ok(())  // 不中斷程序執行
+                self.error_message = Some(e.to_string());  // Store error message
+                Ok(())  // Don't interrupt program execution
             }
         }
     }
@@ -353,7 +353,7 @@ impl App {
         self.error_message = None;
     }
 
-    // 新增打印機註冊相關方法
+    // printer registration
     pub async fn handle_printer_registration_input(&mut self, input: char) -> Result<()> {
         match input {
             '\n' => {
@@ -391,7 +391,7 @@ impl App {
                         }
                     };
                 } else if matches!(self.registration_status, RegistrationStatus::Success(_)) {
-                    // 只有在成功狀態下按 Enter 才會退出註冊頁面
+                    // Only exit registration page when Enter is pressed in success state
                     self.is_registering_printer = false;
                 }
             }

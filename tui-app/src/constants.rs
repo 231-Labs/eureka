@@ -1,6 +1,6 @@
 pub const WALRUS_COIN_TYPE: &str = "0x356a26eb9e012a68958082340d4c4116e7f55615cf27affcff209cf0ae544f59::wal::WAL";
-pub const EUREKA_DEVNET_PACKAGE_ID: &str = "0x1071e919f3260391059c17a7ada97c5ddb32751e1acb381cafa0742f9d5e08dd";
-pub const EUREKA_DEVNET_PRINTER_REGISTRY_ID: &str = "0xfab040dbd9166fcf125110491490b899bb864b87ced83a3a3d4dfd2ddc650663";
+pub const EUREKA_DEVNET_PACKAGE_ID: &str = "0x9325e6349fba681d700bed3f62ed8a5357c00201f4399269287eee808e18898c";
+pub const EUREKA_DEVNET_PRINTER_REGISTRY_ID: &str = "0xf2727afaa3ea22b64d05d213e651d71bbd606eee5e3871322cbc270460924ffa";
 
 pub const NETWORKS: [(&str, &str); 3] = [
     ("devnet", "https://fullnode.devnet.sui.io:443"),

@@ -36,7 +36,7 @@ impl TransactionBuilder {
         registry_id: ObjectID,
         printer_name: &str,
     ) -> Result<String> {
-        // 獲取可用的代幣
+        // Get available coins
         let coins = self.sui_client
             .coin_read_api()
             .get_coins(self.sender, None, None, None)
@@ -55,10 +55,10 @@ impl TransactionBuilder {
             .data
             .ok_or_else(|| anyhow!("Registry object initial_shared_version not found"))?;
 
-        // 創建可編程交易構建器
+        // Create programmable transaction builder
         let mut ptb = ProgrammableTransactionBuilder::new();
 
-        // 獲取初始共享版本
+        // Get initial shared version
         let initial_shared_version = match registry.owner {
             Some(Owner::Shared { initial_shared_version }) => initial_shared_version,
             _ => return Err(anyhow!("Registry is not a shared object")),
@@ -70,12 +70,12 @@ impl TransactionBuilder {
             mutable: true,
         }))?;
 
-        // 準備 printer_name 參數
+        // Prepare printer_name parameter
         let name_bytes = bcs::to_bytes(printer_name)?;
         let name_arg = CallArg::Pure(name_bytes);
         ptb.input(name_arg)?;
 
-        // 添加 move call
+        // Add move call
         let package = ObjectID::from_hex_literal(crate::constants::EUREKA_DEVNET_PACKAGE_ID)?;
         let module = Identifier::new("eureka")?;
         let function = Identifier::new("register_printer")?;
@@ -84,18 +84,18 @@ impl TransactionBuilder {
             package,
             module,
             function,
-            vec![],  // 類型參數
-            vec![Argument::Input(0), Argument::Input(1)],  // 參數
+            vec![],  // Type parameters
+            vec![Argument::Input(0), Argument::Input(1)],  // Parameters
         ));
 
-        // 完成交易構建
+        // Complete transaction building
         let builder = ptb.finish();
 
-        // 設置 gas 參數
+        // Set gas parameters
         let gas_budget = 100_000_000;
         let gas_price = self.sui_client.read_api().get_reference_gas_price().await?;
 
-        // 創建交易數據
+        // Create transaction data
         let tx_data = TransactionData::new_programmable(
             self.sender,
             vec![coin.object_ref()],
@@ -104,12 +104,12 @@ impl TransactionBuilder {
             gas_price,
         );
 
-        // 簽名交易
+        // Sign transaction
         let keystore_path = PathBuf::from(std::env::var("HOME")?).join(".sui").join("sui_config").join("sui.keystore");
         let keystore = FileBasedKeystore::new(&keystore_path)?;
         let signature = keystore.sign_secure(&self.sender, &tx_data, Intent::sui_transaction())?;
 
-        // 執行交易並等待確認
+        // Execute transaction and wait for confirmation
         let transaction_response = self.sui_client
             .quorum_driver_api()
             .execute_transaction_block(
