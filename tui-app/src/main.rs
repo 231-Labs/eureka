@@ -135,7 +135,14 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 app.confirm_harvest();
                             }
                         }
+                        //Start-New
+                        KeyCode::Char('s') => {
+
+                            app.run_custom_script();        // 3D列印機按鍵
+
+                        }
                         _ => {}
+                        //End
                     }
                 }
             }
