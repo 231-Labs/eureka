@@ -128,8 +128,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                         }
                         KeyCode::Char('y') => {
                             if app.is_confirming {
-                                app.clear_error();
-                                app.confirm_toggle();
+                                app.confirm_toggle().await?;
                             } else if app.is_harvesting {
                                 app.clear_error();
                                 app.confirm_harvest();
@@ -137,9 +136,14 @@ async fn run_app<B: ratatui::backend::Backend>(
                         }
                         //Start-New
                         KeyCode::Char('s') => {
-
-                            app.run_custom_script();        // 3D列印機按鍵
-
+                            if let Err(e) = app.handle_model_selection(false).await {
+                                app.error_message = Some(format!("Error: {}", e));
+                            }
+                        }
+                        KeyCode::Enter => {
+                            if let Err(e) = app.handle_model_selection(true).await {
+                                app.error_message = Some(format!("Error: {}", e));
+                            }
                         }
                         _ => {}
                         //End

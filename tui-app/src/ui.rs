@@ -30,7 +30,7 @@ fn draw_registration(f: &mut Frame, app: &mut App) {
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(base_color));
     f.render_widget(main_block, f.size());
-
+    
     // 全屏佈局
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -44,7 +44,7 @@ fn draw_registration(f: &mut Frame, app: &mut App) {
             Constraint::Length(3),   // 控制項信息
         ])
         .split(f.size());
-
+    
     // 添加 EUREKA ASCII藝術
     let time = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -55,7 +55,7 @@ fn draw_registration(f: &mut Frame, app: &mut App) {
         .style(Style::default().fg(highlight_color))
         .alignment(Alignment::Center);
     f.render_widget(ascii_art, main_layout[0]);
-
+    
     // 添加太空船狀態信息
     let status_indicators = Layout::default()
         .direction(Direction::Horizontal)
@@ -86,7 +86,7 @@ fn draw_registration(f: &mut Frame, app: &mut App) {
         .style(Style::default().fg(base_color))
         .alignment(Alignment::Center);
     f.render_widget(wallet_info, status_indicators[2]);
-
+    
     // 添加註冊信息區
     let registration_block = Block::default()
         .title(" << SYSTEM STATUS >> ")
@@ -278,19 +278,19 @@ fn draw_registration(f: &mut Frame, app: &mut App) {
         ]
     } else {
         vec![
-            Line::from(vec![
+        Line::from(vec![
                 Span::styled("Q", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
                 Span::raw(" QUIT"),
                 Span::raw("   "),
                 Span::styled("O", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
                 Span::raw(" TOGGLE STATUS"),
-                Span::raw("   "),
+            Span::raw("   "),
                 Span::styled("H", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
                 Span::raw(" HARVEST REWARDS"),
-                Span::raw("   "),
+            Span::raw("   "),
                 Span::styled("S", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
                 Span::raw(" 3D Print"),
-            ]),
+        ]),
         ]
     };
     
@@ -605,15 +605,15 @@ fn draw_main(f: &mut Frame, app: &mut App) {
                 .fg(secondary_color));
         f.render_stateful_widget(tasks_list, left_chunks[6], &mut app.tasks_state);
     } else {
-        // 離線狀態顯示資產列表
-        let assets: Vec<ListItem> = app.assets
+        // 離線狀態顯示 bottega 列表
+        let bottega_items: Vec<ListItem> = app.bottega_items
             .iter()
-            .map(|asset| {
-                ListItem::new(format!("◈ {}", asset))
+            .map(|item| {
+                ListItem::new(format!("◈ {} [Printed: {}]", item.name, item.printed_count))
                     .style(Style::default().fg(accent_color))
             })
             .collect();
-        let assets_list = List::new(assets)
+        let bottega_list = List::new(bottega_items)
             .block(Block::default()
                 .title("3D MODELS")
                 .borders(Borders::ALL)
@@ -621,8 +621,9 @@ fn draw_main(f: &mut Frame, app: &mut App) {
                 .border_style(Style::default().fg(primary_color)))
             .highlight_style(Style::default()
                 .add_modifier(Modifier::BOLD)
-                .fg(secondary_color));
-        f.render_stateful_widget(assets_list, left_chunks[6], &mut app.assets_state);
+                .fg(secondary_color))
+            .highlight_symbol(">> ");
+        f.render_stateful_widget(bottega_list, left_chunks[6], &mut app.bottega_state);
     }
 
     // 右側內容區
@@ -766,7 +767,7 @@ fn draw_main(f: &mut Frame, app: &mut App) {
         .alignment(Alignment::Center)
         .block(help_block);
     f.render_widget(help, main_layout[5]);
-
+    
     // 模擬太空船環境噪音效果 - 在不同位置添加隨機"雜訊"
     for _ in 0..15 {
         let noise_char = match time % 3 {

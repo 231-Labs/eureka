@@ -1,13 +1,16 @@
 use ratatui::widgets::ListState;
-use crate::wallet::Wallet;
+use crate::wallet::{Wallet, BottegaItem};
 use crate::utils::{NetworkState, shorten_id};
-use crate::constants::{NETWORKS, EUREKA_DEVNET_PRINTER_REGISTRY_ID};
+use crate::constants::{NETWORKS, AGGREGATOR_URL};
 use anyhow::Result;
 use crate::transactions::TransactionBuilder;
 use sui_sdk::types::base_types::ObjectID;
 use std::process::Command;
+use futures;
+use std::path::PathBuf;
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub enum TaskStatus {
     Printing(u8),
     Completed,
@@ -39,8 +42,7 @@ pub struct App {
     pub wallet_address: String,
     pub printer_id: String,
     pub is_online: bool,
-    pub assets: Vec<String>,
-    pub assets_state: ListState,
+    pub bottega_state: ListState,
     pub tasks: Vec<PrintTask>,
     pub tasks_state: ListState,
     pub is_confirming: bool,
@@ -50,16 +52,15 @@ pub struct App {
     pub sui_balance: u128,
     pub wal_balance: u128,
     pub network_state: NetworkState,
-    pub error_message: Option<String>,  // Error message field
-    pub message_type: MessageType,      // Message type field
-    // Machine status fields
-    pub nozzle_temp: f32,      // Nozzle temperature
-    pub bed_temp: f32,         // Bed temperature
-    // Printer registration related status
+    pub error_message: Option<String>,
+    pub message_type: MessageType,
+    pub nozzle_temp: f32,
+    pub bed_temp: f32,
     pub is_registering_printer: bool,
     pub printer_alias: String,
     pub printer_registration_message: String,
-    pub registration_status: RegistrationStatus,  // Status field
+    pub registration_status: RegistrationStatus,
+    pub bottega_items: Vec<BottegaItem>,
 }
 
 impl App {
@@ -78,106 +79,23 @@ impl App {
             }
         };
         
+        // 獲取 bottega 項目
+        let bottega_items = match wallet.get_user_bottega(wallet.get_active_address().await?).await {
+            Ok(items) => items,
+            Err(_) => vec![BottegaItem {
+                name: "Error loading models".to_string(),
+                blob_id: String::new(),
+                printed_count: 0,
+            }]
+        };
+        
         let mut app = App {
             wallet,
             wallet_address,
             printer_id: printer_id.clone(),
             is_online: false,
-            assets: vec![
-                "3D Model #1 - Cute Cat".to_string(),
-                "3D Model #2 - Cool Dragon".to_string(),
-                "3D Model #3 - Fancy Vase".to_string(),
-                "3D Model #4 - Phone Stand".to_string(),
-                "3D Model #5 - Desk Organizer".to_string(),
-                "3D Model #6 - Plant Pot".to_string(),
-                "3D Model #7 - Jewelry Box".to_string(),
-                "3D Model #8 - Toy Car".to_string(),
-                "3D Model #9 - Chess Set".to_string(),
-                "3D Model #10 - Headphone Stand".to_string(),
-                "3D Model #11 - Pencil Holder".to_string(),
-                "3D Model #12 - Wall Art".to_string(),
-                "3D Model #13 - Lamp Shade".to_string(),
-                "3D Model #14 - Tablet Stand".to_string(),
-                "3D Model #15 - Key Chain".to_string(),
-            ],
-            assets_state: ListState::default(),
-            tasks: vec![
-                PrintTask {
-                    id: "#1".to_string(),
-                    name: "Cute Cat".to_string(),
-                    status: TaskStatus::Printing(75),
-                },
-                PrintTask {
-                    id: "#2".to_string(),
-                    name: "Cool Dragon".to_string(),
-                    status: TaskStatus::Completed,
-                },
-                PrintTask {
-                    id: "#3".to_string(),
-                    name: "Fancy Vase".to_string(),
-                    status: TaskStatus::Completed,
-                },
-                PrintTask {
-                    id: "#4".to_string(),
-                    name: "Phone Stand".to_string(),
-                    status: TaskStatus::Completed,
-                },
-                PrintTask {
-                    id: "#5".to_string(),
-                    name: "Desk Organizer".to_string(),
-                    status: TaskStatus::Completed,
-                },
-                PrintTask {
-                    id: "#6".to_string(),
-                    name: "Plant Pot".to_string(),
-                    status: TaskStatus::Completed,
-                },
-                PrintTask {
-                    id: "#7".to_string(),
-                    name: "Jewelry Box".to_string(),
-                    status: TaskStatus::Completed,
-                },
-                PrintTask {
-                    id: "#8".to_string(),
-                    name: "Toy Car".to_string(),
-                    status: TaskStatus::Completed,
-                },
-                PrintTask {
-                    id: "#9".to_string(),
-                    name: "Chess Set".to_string(),
-                    status: TaskStatus::Completed,
-                },
-                PrintTask {
-                    id: "#10".to_string(),
-                    name: "Headphone Stand".to_string(),
-                    status: TaskStatus::Completed,
-                },
-                PrintTask {
-                    id: "#11".to_string(),
-                    name: "Pencil Holder".to_string(),
-                    status: TaskStatus::Completed,
-                },
-                PrintTask {
-                    id: "#12".to_string(),
-                    name: "Wall Art".to_string(),
-                    status: TaskStatus::Completed,
-                },
-                PrintTask {
-                    id: "#13".to_string(),
-                    name: "Lamp Shade".to_string(),
-                    status: TaskStatus::Completed,
-                },
-                PrintTask {
-                    id: "#14".to_string(),
-                    name: "Tablet Stand".to_string(),
-                    status: TaskStatus::Completed,
-                },
-                PrintTask {
-                    id: "#15".to_string(),
-                    name: "Key Chain".to_string(),
-                    status: TaskStatus::Completed,
-                },
-            ],
+            bottega_state: ListState::default(),
+            tasks: Vec::new(),
             tasks_state: ListState::default(),
             is_confirming: false,
             is_harvesting: false,
@@ -186,14 +104,15 @@ impl App {
             sui_balance,
             wal_balance,
             network_state,
-            error_message: None,  // Initialize as None
-            message_type: MessageType::Info, // Initialize as Info
+            error_message: None,
+            message_type: MessageType::Info,
             nozzle_temp: 0.0,
             bed_temp: 0.0,
             is_registering_printer: false,
             printer_alias: String::new(),
             printer_registration_message: String::new(),
             registration_status: RegistrationStatus::Inputting,
+            bottega_items,
         };
         
         // Check if printer registration is needed
@@ -203,7 +122,7 @@ impl App {
         }
         
         // Set initial selection
-        app.assets_state.select(Some(0));
+        app.bottega_state.select(Some(0));
         app.tasks_state.select(Some(0));
         Ok(app)
     }
@@ -212,9 +131,30 @@ impl App {
         self.is_confirming = true;
     }
 
-    pub fn confirm_toggle(&mut self) {
+    pub async fn confirm_toggle(&mut self) -> Result<()> {
         self.is_online = !self.is_online;
         self.is_confirming = false;
+
+        // 如果切換到離線狀態，更新 bottega 列表
+        if !self.is_online {
+            match self.wallet.get_user_bottega(self.wallet.get_active_address().await?).await {
+                Ok(items) => {
+                    self.bottega_items = items;
+                    self.message_type = MessageType::Info;
+                    self.error_message = Some("Successfully loaded 3D models".to_string());
+                    // 重置選擇狀態
+                    if !self.bottega_items.is_empty() {
+                        self.bottega_state.select(Some(0));
+                    }
+                }
+                Err(e) => {
+                    self.message_type = MessageType::Error;
+                    self.error_message = Some(format!("Failed to load 3D models: {}", e));
+                }
+            }
+        }
+        
+        Ok(())
     }
 
     pub fn cancel_toggle(&mut self) {
@@ -237,7 +177,7 @@ impl App {
         let items_len = if self.is_online {
             self.tasks.len()
         } else {
-            self.assets.len()
+            self.bottega_items.len()
         };
 
         if items_len == 0 {
@@ -248,7 +188,7 @@ impl App {
             let i = match self.tasks_state.selected() {
                 Some(i) => {
                     if i >= items_len - 1 {
-                        i  // Already at the bottom, keep current position
+                        i
                     } else {
                         i + 1
                     }
@@ -257,17 +197,17 @@ impl App {
             };
             self.tasks_state.select(Some(i));
         } else {
-            let i = match self.assets_state.selected() {
+            let i = match self.bottega_state.selected() {
                 Some(i) => {
                     if i >= items_len - 1 {
-                        i  // Already at the bottom, keep current position
+                        i
                     } else {
                         i + 1
                     }
                 }
                 None => 0,
             };
-            self.assets_state.select(Some(i));
+            self.bottega_state.select(Some(i));
         }
     }
 
@@ -275,7 +215,7 @@ impl App {
         let items_len = if self.is_online {
             self.tasks.len()
         } else {
-            self.assets.len()
+            self.bottega_items.len()
         };
 
         if items_len == 0 {
@@ -286,7 +226,7 @@ impl App {
             let i = match self.tasks_state.selected() {
                 Some(i) => {
                     if i == 0 {
-                        0  // Already at the top, keep current position
+                        0
                     } else {
                         i - 1
                     }
@@ -295,30 +235,40 @@ impl App {
             };
             self.tasks_state.select(Some(i));
         } else {
-            let i = match self.assets_state.selected() {
+            let i = match self.bottega_state.selected() {
                 Some(i) => {
                     if i == 0 {
-                        0  // Already at the top, keep current position
+                        0
                     } else {
                         i - 1
                     }
                 }
                 None => 0,
             };
-            self.assets_state.select(Some(i));
+            self.bottega_state.select(Some(i));
         }
     }
 
+    #[allow(dead_code)]
     pub fn switch_network(&mut self) {
         self.network_state.next_network();
+        // 觸發網路更新
+        if let Err(e) = futures::executor::block_on(self.update_network()) {
+            self.error_message = Some(e.to_string());
+        }
     }
 
     pub async fn update_network(&mut self) -> Result<()> {
-        self.switch_network();
         self.error_message = None;  // Clear previous error message
         
         match self.do_update_network().await {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                // 重置選擇狀態
+                if !self.bottega_items.is_empty() {
+                    self.bottega_state.select(Some(0));
+                }
+                Ok(())
+            },
             Err(e) => {
                 self.error_message = Some(e.to_string());  // Store error message
                 Ok(())  // Don't interrupt program execution
@@ -332,6 +282,10 @@ impl App {
         self.sui_balance = self.wallet.get_sui_balance(self.wallet.get_active_address().await?).await?;
         self.wal_balance = self.wallet.get_walrus_balance(self.wallet.get_active_address().await?).await?;
         self.printer_id = self.wallet.get_user_printer_id(self.wallet.get_active_address().await?).await?;
+        
+        // 更新 bottega 項目
+        self.bottega_items = self.wallet.get_user_bottega(self.wallet.get_active_address().await?).await?;
+        
         Ok(())
     }
 
@@ -372,20 +326,21 @@ impl App {
                     
                     let builder = TransactionBuilder::new(
                         self.wallet.get_client().clone(),
-                        ObjectID::from(self.wallet.get_active_address().await?)
+                        ObjectID::from(self.wallet.get_active_address().await?),
+                        self.network_state.clone()
                     ).await;
 
                     self.printer_registration_message = "Transaction sent. Waiting for confirmation...\nThis may take a few seconds...".to_string();
 
                     match builder.register_printer(
-                        EUREKA_DEVNET_PRINTER_REGISTRY_ID.parse()?,
+                        self.network_state.get_current_package_ids().eureka_printer_registry_id.parse()?,
                         &self.printer_alias
                     ).await {
                         Ok(tx_digest) => {
                             self.printer_id = tx_digest.clone();
                             self.registration_status = RegistrationStatus::Success(tx_digest.clone());
                             self.printer_registration_message = format!(
-                                "Registration Successful!\n\n\
+                                "Registration Successful!\n\
                                  Printer Name: {}\n\
                                  Transaction ID: {}\n\n\
                                  Press ENTER to continue...",
@@ -419,10 +374,31 @@ impl App {
         Ok(())
     }
 
-    //Start-New
-    pub fn run_custom_script(&mut self) {   //處理S按鈕被按下的功能 1.執行腳本開始列印 2.錯誤訊息顯示
+    pub async fn download_3d_model(&mut self, blob_id: &str) -> Result<()> {
+        let aggregator_url = AGGREGATOR_URL;
+        let output_path = PathBuf::from("Gcode-Transmit/test.stl");
+        
+        // 使用 curl 下載文件，添加 -s (silent) 和 -S (show error) 參數
+        let status = Command::new("curl")
+            .arg("-s")
+            .arg("-S")
+            .arg(format!("{}/v1/blobs/{}", aggregator_url, blob_id))
+            .arg("-o")
+            .arg(&output_path)
+            .status()?;
+
+        if !status.success() {
+            return Err(anyhow::anyhow!("Failed to download 3D model"));
+        }
+
+        self.message_type = MessageType::Info;
+        self.error_message = Some("3D model downloaded successfully".to_string());
+        Ok(())
+    }
+
+    pub fn run_print_script(&mut self) {
         match Command::new("sh")
-            .current_dir("Gcode-Transmit")  // 設置當前工作目錄
+            .current_dir("Gcode-Transmit")
             .arg("Gcode-Send.sh")
             .output() {
                 Ok(output) => {
@@ -445,8 +421,25 @@ impl App {
                 }
             }
     }
-    //End
-    
+
+    pub async fn handle_model_selection(&mut self, download_only: bool) -> Result<()> {
+        if let Some(selected) = self.bottega_state.selected() {
+            if let Some(item) = self.bottega_items.get(selected) {
+                if item.name != "No printable models found" {
+                    let blob_id = item.blob_id.clone();
+                    // 下載檔案
+                    self.download_3d_model(&blob_id).await?;
+                    
+                    // 如果不是只下載，則執行列印腳本
+                    if !download_only {
+                        self.run_print_script();
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     // pub async fn get_wallet_balance(&self) -> Result<u128> {
     //     if let Some(wallet) = &self.wallet {
     //         let address = wallet.get_active_address().await?;

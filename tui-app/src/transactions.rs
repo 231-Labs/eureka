@@ -17,17 +17,20 @@ use sui_keys::keystore::{AccountKeystore, FileBasedKeystore};
 use shared_crypto::intent::Intent;
 use std::path::PathBuf;
 use anyhow::{anyhow, Result};
+use crate::utils::NetworkState;
 
 pub struct TransactionBuilder {
     sui_client: SuiClient,
     sender: SuiAddress,
+    network_state: NetworkState,
 }
 
 impl TransactionBuilder {
-    pub async fn new(sui_client: SuiClient, sender: ObjectID) -> Self {
+    pub async fn new(sui_client: SuiClient, sender: ObjectID, network_state: NetworkState) -> Self {
         Self {
             sui_client,
             sender: SuiAddress::from(sender),
+            network_state,
         }
     }
 
@@ -76,7 +79,7 @@ impl TransactionBuilder {
         ptb.input(name_arg)?;
 
         // Add move call
-        let package = ObjectID::from_hex_literal(crate::constants::EUREKA_DEVNET_PACKAGE_ID)?;
+        let package = ObjectID::from_hex_literal(self.network_state.get_current_package_ids().eureka_package_id)?;
         let module = Identifier::new("eureka")?;
         let function = Identifier::new("register_printer")?;
 

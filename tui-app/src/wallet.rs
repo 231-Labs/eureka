@@ -2,18 +2,32 @@ use anyhow::Result;
 use sui_sdk::types::base_types::{SuiAddress, ObjectID};
 use sui_sdk::SuiClient;
 use sui_sdk::rpc_types::{SuiObjectDataFilter, SuiObjectResponseQuery, SuiObjectDataOptions};
+use sui_sdk::types::Identifier;
 use crate::utils::{setup_for_read, NetworkState, shorten_id};
-use crate::constants::{WALRUS_COIN_TYPE, EUREKA_DEVNET_PACKAGE_ID};
+use crate::constants::WALRUS_COIN_TYPE;
+
+
+#[derive(Debug, Clone)]
+pub struct BottegaItem {
+    pub name: String,
+    pub blob_id: String,
+    pub printed_count: u64,
+}
 
 pub struct Wallet {
     client: SuiClient,
     address: SuiAddress,
+    network_state: NetworkState,
 }
 
 impl Wallet {
     pub async fn new(network_state: &NetworkState) -> Result<Self> {
         let (client, address) = setup_for_read(network_state).await?;
-        Ok(Wallet { client, address })
+        Ok(Wallet { 
+            client, 
+            address,
+            network_state: network_state.clone(),
+        })
     }
 
     pub fn get_client(&self) -> &SuiClient {
@@ -39,7 +53,7 @@ impl Wallet {
     }
 
     pub async fn get_user_printer_id(&self, address: SuiAddress) -> Result<String> {
-        let package_id: ObjectID = EUREKA_DEVNET_PACKAGE_ID.parse()?;
+        let package_id: ObjectID = self.network_state.get_current_package_ids().eureka_package_id.parse()?;
         let mut options = SuiObjectDataOptions::new();
         options.show_content = true;
         
@@ -84,5 +98,74 @@ impl Wallet {
             .ok_or_else(|| anyhow::anyhow!("No printer found"))?;
 
         Ok(printer_id)
+    }
+
+    pub async fn get_user_bottega(&self, address: SuiAddress) -> Result<Vec<BottegaItem>> {
+        let package_id: ObjectID = self.network_state.get_current_package_ids().bottega_package_id.parse()?;
+        let mut options = SuiObjectDataOptions::new();
+        options.show_content = true;
+
+        let filter = SuiObjectDataFilter::MoveModule {
+            package: package_id,
+            module: Identifier::new("bottega".to_string())?,
+        };
+
+        let response = self.client.read_api()
+            .get_owned_objects(
+                address,
+                Some(SuiObjectResponseQuery::new(Some(filter), Some(options))),
+                None,
+                None
+            )
+            .await?;
+
+        let bottega_items: Vec<BottegaItem> = response.data.iter()
+            .filter_map(|obj| self.parse_bottega_object(obj))
+            .collect();
+
+        Ok(if bottega_items.is_empty() {
+            vec![BottegaItem {
+                name: "No printable models found".to_string(),
+                blob_id: String::new(),
+                printed_count: 0,
+            }]
+        } else {
+            let mut items = bottega_items;
+            items.sort_by(|a, b| a.name.cmp(&b.name));
+            items
+        })
+    }
+
+    fn parse_bottega_object(&self, obj: &sui_sdk::rpc_types::SuiObjectResponse) -> Option<BottegaItem> {
+        obj.data.as_ref()
+            .and_then(|data| data.content.as_ref())
+            .and_then(|content| match content {
+                sui_sdk::rpc_types::SuiParsedData::MoveObject(move_obj) => {
+                    if let sui_sdk::rpc_types::SuiMoveStruct::WithFields(fields) = &move_obj.fields {
+                        Some(fields)
+                    } else {
+                        None
+                    }
+                },
+                _ => None,
+            })
+            .and_then(|fields| {
+                let structure = fields.get("structure")?;
+                let printed = fields.get("printed")?;
+                
+                match (structure, printed) {
+                    (
+                        sui_sdk::rpc_types::SuiMoveValue::String(structure_id),
+                        sui_sdk::rpc_types::SuiMoveValue::String(printed_str)
+                    ) => {
+                        Some(BottegaItem {
+                            name: format!("3D Model ({})", shorten_id(structure_id)),
+                            blob_id: structure_id.clone(),
+                            printed_count: printed_str.parse::<u64>().unwrap_or(0),
+                        })
+                    },
+                    _ => None,
+                }
+            })
     }
 } 
