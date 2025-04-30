@@ -13,7 +13,8 @@ node_modules/
 
 # Documentation
 /docs/
-
+tui-app/Gcode-Transmit/test.gcode
+tui-app/Gcode-Transmit/test.stl
 # Environment
 .env
 .env.*
