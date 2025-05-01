@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if [ -f ~/eureka/tui-app/Gcode-Transmit/Gcode-Send-PID.pid ]; then
-    PID=$(cat /tmp/my_script.pid)
+    PID=$(cat ~/eureka/tui-app/Gcode-Transmit/Gcode-Send-PID.pid)
     if ps -p $PID > /dev/null; then
         kill $PID
         echo "已成功終止列印，PID: $PID"
