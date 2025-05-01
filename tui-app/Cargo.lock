@@ -6959,12 +6959,16 @@ name = "tui-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bcs",
  "crossterm",
  "dirs 6.0.0",
+ "futures",
  "ratatui",
+ "shared-crypto",
  "sui-config",
  "sui-keys",
  "sui-sdk",
+ "sui-types",
  "tokio",
 ]
 

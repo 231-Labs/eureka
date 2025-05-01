@@ -3,7 +3,8 @@ use sui_sdk::SuiClient;
 use sui_sdk::SuiClientBuilder;
 use sui_sdk::types::base_types::SuiAddress;
 use sui_sdk::wallet_context::WalletContext;
-use crate::constants::NETWORKS;
+use crate::constants::{NETWORKS, NETWORK_PACKAGE_IDS, NetworkPackageIds};
+use dirs::home_dir;
 
 pub fn shorten_id(id: &str) -> String {
     if id.len() > 10 {
@@ -13,6 +14,7 @@ pub fn shorten_id(id: &str) -> String {
     }
 }
 
+#[derive(Clone)]
 pub struct NetworkState {
     pub current_network: usize,
 }
@@ -20,10 +22,11 @@ pub struct NetworkState {
 impl NetworkState {
     pub fn new() -> Self {
         NetworkState {
-            current_network: 0  // 默認為 devnet
+            current_network: 1  // 默認為 testnet
         }
     }
 
+    #[allow(dead_code)]
     pub fn next_network(&mut self) {
         self.current_network = (self.current_network + 1) % NETWORKS.len();
     }
@@ -35,6 +38,10 @@ impl NetworkState {
     pub fn get_current_rpc(&self) -> &str {
         NETWORKS[self.current_network].1
     }
+
+    pub fn get_current_package_ids(&self) -> &NetworkPackageIds {
+        &NETWORK_PACKAGE_IDS[self.current_network]
+    }
 }
 
 pub async fn setup_for_read(network_state: &NetworkState) -> Result<(SuiClient, SuiAddress)> {
@@ -42,7 +49,7 @@ pub async fn setup_for_read(network_state: &NetworkState) -> Result<(SuiClient, 
         .build(network_state.get_current_rpc())
         .await?;
     
-    let config_path = dirs::home_dir()
+    let config_path = home_dir()
         .ok_or_else(|| anyhow::anyhow!("Failed to get home directory"))?
         .join(".sui")
         .join("sui_config")

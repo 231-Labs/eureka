@@ -6,7 +6,7 @@ module eureka::print_job {
     // === Errors ===
     const EPrinterBusy: u64 = 1;
     const ENotAuthorized: u64 = 2;
-    const EPriceNotMet: u64 = 3;
+    // const EPriceNotMet: u64 = 3;
 
     // === Constants ===
     const PRINTER_STATUS_ONLINE: vector<u8> = b"online";
@@ -52,7 +52,7 @@ module eureka::print_job {
         assert!(std::string::utf8(PRINTER_STATUS_ONLINE) == eureka::get_printer_status(printer), EPrinterBusy);
         
         let paid_amount = coin::value(&payment);
-        assert!(paid_amount >= eureka::get_printer_price(printer), EPriceNotMet);
+        //assert!(paid_amount >= eureka::get_printer_price(printer), EPriceNotMet);
 
         // Transfer payment to printer's earnings
         eureka::add_earnings(printer, coin::into_balance(payment));

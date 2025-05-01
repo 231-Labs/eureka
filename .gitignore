@@ -13,7 +13,8 @@ node_modules/
 
 # Documentation
 /docs/
-
+tui-app/Gcode-Transmit/test.gcode
+tui-app/Gcode-Transmit/test.stl
 # Environment
 .env
 .env.*
@@ -21,3 +22,6 @@ node_modules/
 # System files
 .DS_Store
 Thumbs.db
+
+# Ignore sui-examples directory
+sui-examples/

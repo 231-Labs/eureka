@@ -5,7 +5,7 @@ module eureka::eureka {
     // === Errors ===
     const EPrinterBusy: u64 = 1;
     const ENotAuthorized: u64 = 1;
-    const EPriceNotMet: u64 = 3;
+    // const EPriceNotMet: u64 = 3;
 
     // === Constants ===
     const PRINTER_STATUS_ONLINE: vector<u8> = b"online";
@@ -28,7 +28,7 @@ module eureka::eureka {
         owner: address,
         alias: String,
         status: String,
-        price: u64,
+        // price: u64,
         earnings: Balance<SUI>,
     }
 
@@ -57,7 +57,7 @@ module eureka::eureka {
         printer_id: ID,
         owner: address,
         status: String,
-        price: u64,
+        //price: u64,
     }
 
     public struct PrintJobCreated has copy, drop {
@@ -94,7 +94,6 @@ module eureka::eureka {
     public entry fun register_printer(
         state: &mut PrinterRegisty,
         alias: String,
-        price: u64,
         ctx: &mut TxContext,
     ) {
         let sender = tx_context::sender(ctx);
@@ -104,7 +103,7 @@ module eureka::eureka {
             owner: sender,
             alias,  
             status: std::string::utf8(PRINTER_STATUS_OFFLINE),
-            price,
+            //price,
             earnings: balance::zero(),
         };
 
@@ -123,7 +122,6 @@ module eureka::eureka {
             printer_id,
             owner: sender,
             status: std::string::utf8(PRINTER_STATUS_OFFLINE),
-            price,
         });
     }
 
@@ -136,7 +134,7 @@ module eureka::eureka {
         assert!(std::string::utf8(PRINTER_STATUS_ONLINE) == printer.status, EPrinterBusy);
         
         let paid_amount = coin::value(&payment);
-        assert!(paid_amount >= printer.price, EPriceNotMet);
+        //assert!(paid_amount >= printer.price, EPriceNotMet);
 
         // Transfer payment to printer's earnings
         balance::join(&mut printer.earnings, coin::into_balance(payment));
@@ -238,9 +236,9 @@ module eureka::eureka {
         printer.status
     }
 
-    public fun get_printer_price(printer: &Printer): u64 {
-        printer.price
-    }
+    // public fun get_printer_price(printer: &Printer): u64 {
+    //     printer.price
+    // }
 
     public fun get_printer_owner(printer: &Printer): address {
         printer.owner
