@@ -4,6 +4,7 @@ use sui_sdk::SuiClientBuilder;
 use sui_sdk::types::base_types::SuiAddress;
 use sui_sdk::wallet_context::WalletContext;
 use crate::constants::{NETWORKS, NETWORK_PACKAGE_IDS, NetworkPackageIds};
+use dirs::home_dir;
 
 pub fn shorten_id(id: &str) -> String {
     if id.len() > 10 {
@@ -48,7 +49,7 @@ pub async fn setup_for_read(network_state: &NetworkState) -> Result<(SuiClient, 
         .build(network_state.get_current_rpc())
         .await?;
     
-    let config_path = dirs::home_dir()
+    let config_path = home_dir()
         .ok_or_else(|| anyhow::anyhow!("Failed to get home directory"))?
         .join(".sui")
         .join("sui_config")
