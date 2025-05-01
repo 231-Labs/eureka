@@ -649,6 +649,7 @@ fn draw_main(f: &mut Frame, app: &mut App) {
         let (title, style) = match app.message_type {
             MessageType::Error => ("ERROR", Style::default().fg(Color::Red)),
             MessageType::Info => ("MESSAGE", Style::default().fg(Color::Green)),
+            MessageType::Success => ("SUCCESS", Style::default().fg(Color::Yellow)),
         };
 
         let message_block = Block::default()

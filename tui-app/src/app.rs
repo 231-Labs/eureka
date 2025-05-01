@@ -8,6 +8,8 @@ use sui_sdk::types::base_types::ObjectID;
 use std::process::Command;
 use futures;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -35,8 +37,10 @@ pub enum RegistrationStatus {
 pub enum MessageType {
     Error,
     Info,
+    Success,
 }
 
+#[derive(Clone)]
 pub struct App {
     pub wallet: Wallet,
     pub wallet_address: String,
@@ -392,30 +396,40 @@ impl App {
         Ok(())
     }
 
-    pub fn run_print_script(&mut self) {
-        match Command::new("sh")
-            .current_dir("Gcode-Transmit")
-            .arg("Gcode-Send.sh")
-            .output() {
-                Ok(output) => {
-                    if !output.status.success() {
-                        if let Ok(error) = String::from_utf8(output.stderr) {
-                            self.message_type = MessageType::Error;
-                            self.error_message = Some(format!("Script failed: {}", error));
+    pub async fn run_print_script(&mut self) {
+        self.message_type = MessageType::Info;
+        self.error_message = Some("Printing...".to_string());
+
+        let app = Arc::new(Mutex::new(self.clone()));
+        
+        tokio::spawn(async move {
+            match tokio::process::Command::new("sh")
+                .current_dir("Gcode-Transmit")
+                .arg("Gcode-Send.sh")
+                .output()
+                .await {
+                    Ok(output) => {
+                        let mut app = app.lock().await;
+                        if !output.status.success() {
+                            if let Ok(error) = String::from_utf8(output.stderr) {
+                                app.message_type = MessageType::Error;
+                                app.error_message = Some(format!("Script failed: {}", error));
+                            } else {
+                                app.message_type = MessageType::Error;
+                                app.error_message = Some("Script failed with non-utf8 error".to_string());
+                            }
                         } else {
-                            self.message_type = MessageType::Error;
-                            self.error_message = Some("Script failed with non-utf8 error".to_string());
+                            app.message_type = MessageType::Success;
+                            app.error_message = Some("Print completed".to_string());
                         }
-                    } else {
-                        self.message_type = MessageType::Info;
-                        self.error_message = Some("Printing...".to_string());
+                    }
+                    Err(e) => {
+                        let mut app = app.lock().await;
+                        app.message_type = MessageType::Error;
+                        app.error_message = Some(format!("Failed to execute script: {}", e));
                     }
                 }
-                Err(e) => {
-                    self.message_type = MessageType::Error;
-                    self.error_message = Some(format!("Failed to execute script: {}", e));
-                }
-            }
+        });
     }
 
     pub async fn handle_model_selection(&mut self, download_only: bool) -> Result<()> {
@@ -428,7 +442,7 @@ impl App {
                     
                     // 如果不是只下載，則執行列印腳本
                     if !download_only {
-                        self.run_print_script();
+                        self.run_print_script().await;
                     }
                 }
             }
