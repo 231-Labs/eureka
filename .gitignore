@@ -15,6 +15,7 @@ node_modules/
 /docs/
 tui-app/Gcode-Transmit/test.gcode
 tui-app/Gcode-Transmit/test.stl
+tui-app/Gcode-Transmit/Gcode-Send-PID.pid
 # Environment
 .env
 .env.*
