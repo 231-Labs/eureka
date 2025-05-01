@@ -665,42 +665,6 @@ fn draw_main(f: &mut Frame, app: &mut App) {
         f.render_widget(message_text, right_area[0]);
     }
 
-    // 機器狀態區域
-    let status_layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
-        .split(right_area[1]);
-
-    // 噴嘴溫度
-    let nozzle_block = Block::default()
-        .title("NOZZLE TEMP")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(secondary_color));
-    
-    let nozzle_text = Paragraph::new(format!("{:.1}°C", app.nozzle_temp))
-        .style(Style::default().fg(if app.nozzle_temp > 50.0 { Color::Red } else { secondary_color }))
-        .alignment(Alignment::Center)
-        .block(nozzle_block);
-
-    // 加熱板溫度
-    let bed_block = Block::default()
-        .title("BED TEMP")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(secondary_color));
-    
-    let bed_text = Paragraph::new(format!("{:.1}°C", app.bed_temp))
-        .style(Style::default().fg(if app.bed_temp > 50.0 { Color::Red } else { secondary_color }))
-        .alignment(Alignment::Center)
-        .block(bed_block);
-
-    f.render_widget(nozzle_text, status_layout[0]);
-    f.render_widget(bed_text, status_layout[1]);
-
     // 底部控制項
     let help_block = Block::default()
         .borders(Borders::ALL)
