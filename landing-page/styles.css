@@ -1,0 +1,398 @@
+:root {
+    --primary-color: #ff69b4;
+    --secondary-color: #ff8c00;
+    --background-color: #0a0a0a;
+    --text-color: #ffffff;
+    --border-color: #ff69b4;
+    --dim-color: #888888;
+    --accent-color: #ff8c00;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Courier New', monospace;
+    background-color: var(--background-color);
+    color: var(--text-color);
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 1rem auto;
+    padding: 1.5rem;
+    border: 2px solid var(--primary-color);
+    border-radius: 12px;
+    position: relative;
+    background: rgba(255, 105, 180, 0.02);
+}
+
+.container::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    border: 1px solid var(--primary-color);
+    border-radius: 8px;
+    pointer-events: none;
+}
+
+/* ASCII Art */
+.ascii-art {
+    text-align: center;
+    margin: 1rem 0;
+    color: var(--primary-color);
+    font-size: 0.8rem;
+    line-height: 1.2;
+    text-shadow: 0 0 10px var(--primary-color);
+}
+
+/* Status Bar */
+.status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.8rem;
+    border: 1px solid var(--primary-color);
+    border-radius: 8px;
+    margin: 1rem 0;
+    background: rgba(255, 105, 180, 0.05);
+    box-shadow: 0 0 15px rgba(255, 105, 180, 0.1);
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.status-indicator {
+    color: var(--secondary-color);
+    position: relative;
+    display: inline-block;
+    padding: 0 4px;
+}
+
+/* 移除所有動畫相關的樣式 */
+.status-indicator::before {
+    display: none;
+}
+
+/* 移除所有動畫關鍵幀定義 */
+@keyframes marquee {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+.status-text {
+    color: var(--dim-color);
+}
+
+/* Hero Section */
+.hero {
+    text-align: center;
+    margin: 2rem 0;
+}
+
+h1 {
+    font-size: 2.8rem;
+    margin-bottom: 0.8rem;
+    color: var(--primary-color);
+    text-shadow: 0 0 10px var(--primary-color);
+    letter-spacing: 2px;
+    animation: glow 2s infinite;
+}
+
+.subtitle {
+    font-size: 1.1rem;
+    color: var(--dim-color);
+    margin-bottom: 2rem;
+    overflow: hidden;
+    border-right: 2px solid var(--primary-color);
+    white-space: nowrap;
+    margin: 0 auto;
+    animation: typing 3.5s steps(40, end),
+               blink-caret 0.75s step-end infinite;
+}
+
+/* Features */
+.features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin: 2rem 0;
+}
+
+.feature {
+    padding: 1.5rem;
+    border: 1px solid var(--primary-color);
+    border-radius: 12px;
+    text-align: center;
+    background: rgba(255, 105, 180, 0.05);
+    transition: all 0.3s ease;
+    box-shadow: 0 0 10px rgba(255, 105, 180, 0.1);
+    position: relative;
+    overflow: hidden;
+}
+
+.feature:hover {
+    transform: translateY(-5px) scale(1.02);
+    box-shadow: 0 0 20px rgba(255, 105, 180, 0.2);
+}
+
+.feature i {
+    font-size: 2rem;
+    color: var(--primary-color);
+    margin-bottom: 0.8rem;
+    text-shadow: 0 0 10px rgba(255, 105, 180, 0.3);
+}
+
+.feature h3 {
+    color: var(--primary-color);
+    margin-bottom: 0.8rem;
+    font-size: 1.2rem;
+}
+
+/* CTA Section */
+.cta {
+    margin: 2rem 0;
+}
+
+.cta-box {
+    text-align: center;
+    padding: 2rem;
+    border: 2px solid var(--primary-color);
+    border-radius: 12px;
+    background: rgba(255, 105, 180, 0.05);
+    box-shadow: 0 0 20px rgba(255, 105, 180, 0.1);
+}
+
+.cta-box h2 {
+    color: var(--primary-color);
+    margin-bottom: 0.8rem;
+    font-size: 2rem;
+    text-shadow: 0 0 10px rgba(255, 105, 180, 0.3);
+}
+
+.buttons {
+    display: flex;
+    justify-content: center;
+    gap: 0.8rem;
+    margin-top: 1.5rem;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem 2rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--text-color);
+    transition: all 0.3s ease;
+    font-size: 1.1rem;
+}
+
+.btn.primary {
+    display: none;
+}
+
+.btn.secondary {
+    background: rgba(255, 140, 0, 0.1);
+    color: var(--secondary-color);
+    border-color: var(--secondary-color);
+}
+
+.btn.secondary:hover {
+    background: rgba(255, 140, 0, 0.2);
+    box-shadow: 0 0 20px rgba(255, 140, 0, 0.3);
+}
+
+.btn:hover {
+    transform: translateY(-3px) scale(1.05);
+    box-shadow: 0 0 20px rgba(255, 105, 180, 0.3);
+}
+
+/* Footer */
+footer {
+    text-align: center;
+    padding: 2rem 0;
+    color: var(--dim-color);
+    border-top: 1px solid var(--primary-color);
+    margin-top: 3rem;
+    padding-top: 2rem;
+}
+
+footer p {
+    font-size: 1.1rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .status-bar {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .features {
+        grid-template-columns: 1fr;
+    }
+    
+    .buttons {
+        flex-direction: column;
+    }
+    
+    .ascii-art pre {
+        font-size: 0.6rem;
+    }
+}
+
+/* Animations */
+@keyframes glow {
+    0% {
+        text-shadow: 0 0 10px var(--primary-color),
+                     0 0 20px var(--primary-color),
+                     0 0 30px var(--primary-color);
+    }
+    50% {
+        text-shadow: 0 0 20px var(--primary-color),
+                     0 0 30px var(--primary-color),
+                     0 0 40px var(--primary-color);
+    }
+    100% {
+        text-shadow: 0 0 10px var(--primary-color),
+                     0 0 20px var(--primary-color),
+                     0 0 30px var(--primary-color);
+    }
+}
+
+/* 移除 CRT Effect */
+body::before {
+    display: none;
+}
+
+/* 調整 Vignette Effect */
+body::after {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(
+        circle at center,
+        transparent 0%,
+        rgba(0, 0, 0, 0.3) 100%
+    );
+    pointer-events: none;
+    z-index: 999;
+}
+
+/* 調整 Typewriter Effect */
+@keyframes typing {
+    from { width: 0 }
+    to { width: 100% }
+}
+
+/* 調整 Pixel Art Animation */
+.feature {
+    position: relative;
+    overflow: hidden;
+}
+
+.feature::before {
+    display: none;
+}
+
+/* Glitch Effect */
+h1 {
+    position: relative;
+    animation: glow 2s infinite;
+}
+
+h1::before,
+h1::after {
+    display: none;
+}
+
+/* Animations */
+@keyframes scan {
+    0% {
+        transform: translateY(0);
+    }
+    100% {
+        transform: translateY(100vh);
+    }
+}
+
+@keyframes typing {
+    from { width: 0 }
+    to { width: 100% }
+}
+
+@keyframes blink-caret {
+    from, to { border-color: transparent }
+    50% { border-color: var(--primary-color) }
+}
+
+/* Button Hover Effect */
+.btn {
+    position: relative;
+    overflow: hidden;
+}
+
+.btn::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.2),
+        transparent
+    );
+    transition: 0.5s;
+}
+
+.btn:hover::before {
+    left: 100%;
+}
+
+/* Status Bar Animation */
+@keyframes pulse {
+    0% {
+        opacity: 0.3;
+        transform: scale(0.95);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.05);
+    }
+    100% {
+        opacity: 0.3;
+        transform: scale(0.95);
+    }
+}
+
+/* 調整內部區塊的間距 */
+header {
+    margin-bottom: 3rem;
+}
+
+main {
+    padding: 0 1rem;
+} 
