@@ -147,6 +147,20 @@ async fn run_app<B: ratatui::backend::Backend>(
                         }
                         _ => {}
                         //End
+
+                        //Start-New
+                        KeyCode::Char('e') => {
+                            if let Err(e) = app.handle_model_selection(false).await {
+                                app.error_message = Some(format!("Error: {}", e));
+                            }
+                        }
+                        KeyCode::Enter => {
+                            if let Err(e) = app.handle_model_selection(true).await {
+                                app.error_message = Some(format!("Error: {}", e));
+                            }
+                        }
+                        _ => {}
+                        //End
                     }
                 }
             }
