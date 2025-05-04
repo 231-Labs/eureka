@@ -431,34 +431,41 @@ impl App {
                 }
         });
     }
-    pub fn run_stop_script(&mut self)-> Result<(), Box<dyn std::error::Error>> {
-         match Command::new("sh")
-             .current_dir("Gcode-Transmit")
-             .arg("Gcode-Stop.sh")
-             .output() {
-                 Ok(output) => {
-                     if !output.status.success() {
-                         if let Ok(error) = String::from_utf8(output.stderr) {
-                             self.message_type = MessageType::Error;
-                             self.error_message = Some(format!("Script failed: {}", error));
-                         } else {
-                             self.message_type = MessageType::Error;
-                             self.error_message = Some("Script failed with non-utf8 error".to_string());
-                         }
-                         return Err("Script failed".into());
-                     } else {
-                         self.message_type = MessageType::Info;
-                         self.error_message = Some("Printing...".to_string());
-                     }
-                 }
-                 Err(e) => {
-                     self.message_type = MessageType::Error;
-                     self.error_message = Some(format!("Failed to execute script: {}", e));
-                     return Err("Script failed".into());
-                 }
-             }
-         
-           Ok(()) 
+    pub async fn run_stop_script(&mut self)-> Result<()> {
+         self.message_type = MessageType::Info;
+         self.error_message = Some("Stoping...".to_string());
+
+         let app = Arc::new(Mutex::new(self.clone()));
+
+         tokio::spawn(async move {
+            match tokio::process::Command::new("sh")
+                .current_dir("Gcode-Transmit")
+                .arg("Gcode-Stop.sh")
+                .output()
+                .await {
+                    Ok(output) => {
+                         let mut app = app.lock().await;
+                          if !output.status.success() {
+                            if let Ok(error) = String::from_utf8(output.stderr) {
+                                app.message_type = MessageType::Error;
+                                app.error_message = Some(format!("Script failed: {}", error));
+                            } else {
+                                app.message_type = MessageType::Error;
+                                app.error_message = Some("Script failed with non-utf8 error".to_string());
+                            }
+                        } else {
+                            app.message_type = MessageType::Success;
+                            app.error_message = Some("Stopted".to_string());
+                        }
+                    }
+                    Err(e) => {
+                        let mut app = app.lock().await;
+                        app.message_type = MessageType::Error;
+                        app.error_message = Some(format!("Failed to execute script: {}", e));
+                    }
+                }
+        });
+       Ok(())        
      }
 
     pub async fn handle_model_selection(&mut self, download_only: bool) -> Result<()> {
