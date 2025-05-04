@@ -421,7 +421,7 @@ impl App {
                 }
             }
     }
-    pub async fn run_stop_script(&mut self) {
+    pub fn run_stop_script(&mut self)-> Result<(), Box<dyn std::error::Error>> {
          match Command::new("sh")
              .current_dir("Gcode-Transmit")
              .arg("Gcode-Stop.sh")
@@ -435,6 +435,7 @@ impl App {
                              self.message_type = MessageType::Error;
                              self.error_message = Some("Script failed with non-utf8 error".to_string());
                          }
+                         return Err("Script failed".into());
                      } else {
                          self.message_type = MessageType::Info;
                          self.error_message = Some("Printing...".to_string());
@@ -443,8 +444,11 @@ impl App {
                  Err(e) => {
                      self.message_type = MessageType::Error;
                      self.error_message = Some(format!("Failed to execute script: {}", e));
+                     return Err("Script failed".into());
                  }
              }
+         
+           Ok(()) 
      }
 
     pub async fn handle_model_selection(&mut self, download_only: bool) -> Result<()> {
