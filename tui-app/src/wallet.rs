@@ -14,6 +14,7 @@ pub struct BottegaItem {
     pub printed_count: u64,
 }
 
+#[derive(Clone)]
 pub struct Wallet {
     client: SuiClient,
     address: SuiAddress,

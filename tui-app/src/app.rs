@@ -8,6 +8,8 @@ use sui_sdk::types::base_types::ObjectID;
 use std::process::Command;
 use futures;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -35,8 +37,10 @@ pub enum RegistrationStatus {
 pub enum MessageType {
     Error,
     Info,
+    Success,
 }
 
+#[derive(Clone)]
 pub struct App {
     pub wallet: Wallet,
     pub wallet_address: String,
@@ -54,8 +58,6 @@ pub struct App {
     pub network_state: NetworkState,
     pub error_message: Option<String>,
     pub message_type: MessageType,
-    pub nozzle_temp: f32,
-    pub bed_temp: f32,
     pub is_registering_printer: bool,
     pub printer_alias: String,
     pub printer_registration_message: String,
@@ -106,8 +108,6 @@ impl App {
             network_state,
             error_message: None,
             message_type: MessageType::Info,
-            nozzle_temp: 0.0,
-            bed_temp: 0.0,
             is_registering_printer: false,
             printer_alias: String::new(),
             printer_registration_message: String::new(),
@@ -396,31 +396,77 @@ impl App {
         Ok(())
     }
 
-    pub fn run_print_script(&mut self) {
-        match Command::new("sh")
-            .current_dir("Gcode-Transmit")
-            .arg("Gcode-Send.sh")
-            .output() {
-                Ok(output) => {
-                    if !output.status.success() {
-                        if let Ok(error) = String::from_utf8(output.stderr) {
-                            self.message_type = MessageType::Error;
-                            self.error_message = Some(format!("Script failed: {}", error));
+    pub async fn run_print_script(&mut self) {
+        self.message_type = MessageType::Info;
+        self.error_message = Some("Printing...".to_string());
+
+        let app = Arc::new(Mutex::new(self.clone()));
+        
+        tokio::spawn(async move {
+            match tokio::process::Command::new("sh")
+                .current_dir("Gcode-Transmit")
+                .arg("Gcode-Send.sh")
+                .output()
+                .await {
+                    Ok(output) => {
+                        let mut app = app.lock().await;
+                        if !output.status.success() {
+                            if let Ok(error) = String::from_utf8(output.stderr) {
+                                app.message_type = MessageType::Error;
+                                app.error_message = Some(format!("Script failed: {}", error));
+                            } else {
+                                app.message_type = MessageType::Error;
+                                app.error_message = Some("Script failed with non-utf8 error".to_string());
+                            }
                         } else {
-                            self.message_type = MessageType::Error;
-                            self.error_message = Some("Script failed with non-utf8 error".to_string());
+                            app.message_type = MessageType::Success;
+                            app.error_message = Some("Print completed".to_string());
                         }
-                    } else {
-                        self.message_type = MessageType::Info;
-                        self.error_message = Some("Printing...".to_string());
+                    }
+                    Err(e) => {
+                        let mut app = app.lock().await;
+                        app.message_type = MessageType::Error;
+                        app.error_message = Some(format!("Failed to execute script: {}", e));
                     }
                 }
-                Err(e) => {
-                    self.message_type = MessageType::Error;
-                    self.error_message = Some(format!("Failed to execute script: {}", e));
-                }
-            }
+        });
     }
+    pub async fn run_stop_script(&mut self)-> Result<()> {
+         self.message_type = MessageType::Info;
+         self.error_message = Some("Stoping...".to_string());
+
+         let app = Arc::new(Mutex::new(self.clone()));
+
+         tokio::spawn(async move {
+            match tokio::process::Command::new("sh")
+                .current_dir("Gcode-Transmit")
+                .arg("Gcode-Stop.sh")
+                .output()
+                .await {
+                    Ok(output) => {
+                         let mut app = app.lock().await;
+                          if !output.status.success() {
+                            if let Ok(error) = String::from_utf8(output.stderr) {
+                                app.message_type = MessageType::Error;
+                                app.error_message = Some(format!("Script failed: {}", error));
+                            } else {
+                                app.message_type = MessageType::Error;
+                                app.error_message = Some("Script failed with non-utf8 error".to_string());
+                            }
+                        } else {
+                            app.message_type = MessageType::Success;
+                            app.error_message = Some("Stopted".to_string());
+                        }
+                    }
+                    Err(e) => {
+                        let mut app = app.lock().await;
+                        app.message_type = MessageType::Error;
+                        app.error_message = Some(format!("Failed to execute script: {}", e));
+                    }
+                }
+        });
+       Ok(())        
+     }
 
     pub async fn handle_model_selection(&mut self, download_only: bool) -> Result<()> {
         if let Some(selected) = self.bottega_state.selected() {
@@ -432,7 +478,7 @@ impl App {
                     
                     // 如果不是只下載，則執行列印腳本
                     if !download_only {
-                        self.run_print_script();
+                        self.run_print_script().await;
                     }
                 }
             }
