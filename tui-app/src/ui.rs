@@ -288,11 +288,11 @@ fn draw_registration(f: &mut Frame, app: &mut App) {
             Span::styled("H", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
             Span::raw(" HARVEST REWARDS"),
             Span::raw("   "),
-            //Span::styled("S", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
-            //Span::raw(" 3D Print"),
-            //Span::raw("   "),
-            //Span::styled("E", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
-            //Span::raw(" Stop Printing"),
+            Span::styled("S", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+            Span::raw(" 3D Print"),
+            Span::raw("   "),
+            Span::styled("E", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+            Span::raw(" Stop Printing"),
         ]),
         ]
     };
@@ -761,6 +761,9 @@ fn draw_main(f: &mut Frame, app: &mut App) {
                 Span::raw("   "),
                 Span::styled("S", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
                 Span::raw(" 3D Print"),
+                Span::raw("   "),
+                Span::styled("E", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+                Span::raw(" Stop Printing"),
             ]),
         ]
     };
