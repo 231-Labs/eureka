@@ -421,6 +421,31 @@ impl App {
                 }
             }
     }
+    pub fn run_stop_script(&mut self) {
+         match Command::new("sh")
+             .current_dir("Gcode-Transmit")
+             .arg("Gcode-Stop.sh")
+             .output() {
+                 Ok(output) => {
+                     if !output.status.success() {
+                         if let Ok(error) = String::from_utf8(output.stderr) {
+                             self.message_type = MessageType::Error;
+                             self.error_message = Some(format!("Script failed: {}", error));
+                         } else {
+                             self.message_type = MessageType::Error;
+                             self.error_message = Some("Script failed with non-utf8 error".to_string());
+                         }
+                     } else {
+                         self.message_type = MessageType::Info;
+                         self.error_message = Some("Printing...".to_string());
+                     }
+                 }
+                 Err(e) => {
+                     self.message_type = MessageType::Error;
+                     self.error_message = Some(format!("Failed to execute script: {}", e));
+                 }
+             }
+     }
 
     pub async fn handle_model_selection(&mut self, download_only: bool) -> Result<()> {
         if let Some(selected) = self.bottega_state.selected() {
