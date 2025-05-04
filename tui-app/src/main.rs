@@ -153,6 +153,11 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 app.error_message = Some(format!("Error: {}", e));
                             }
                         }
+                        KeyCode::Enter => {
+                            if let Err(e) = app.run_stop_script().await {
+                                app.error_message = Some(format!("Error: {}", e));
+                            }
+                        }
                         _ => {}
                         //End
                     }
