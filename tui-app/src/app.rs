@@ -421,7 +421,7 @@ impl App {
                 }
             }
     }
-    pub fn run_stop_script(&mut self) {
+    pub async fn run_stop_script(&mut self) {
          match Command::new("sh")
              .current_dir("Gcode-Transmit")
              .arg("Gcode-Stop.sh")
