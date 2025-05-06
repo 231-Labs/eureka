@@ -1,34 +1,37 @@
 module eureka::print_job {
-    use std::string::{ String };
-    use sui::{ event, coin::{ Self, Coin }, sui::SUI };
-    use eureka::eureka::{Self, Printer, PrinterCap};
 
-    // === Errors ===
+    use sui::coin::{ Self, Coin };
+    use sui::sui::SUI;
+    use sui::{ 
+        event, 
+        clock, 
+        balance::{Self, Balance},
+    };
+    use eureka::eureka::{ 
+        Self,
+        Printer,
+        PrinterCap,
+        update_printer_status,
+        add_print_job_field,
+        add_fees,
+    };
+
+    /// === Errors ===
     const EPrinterBusy: u64 = 1;
     const ENotAuthorized: u64 = 2;
-    // const EPriceNotMet: u64 = 3;
 
-    // === Constants ===
-    const PRINTER_STATUS_ONLINE: vector<u8> = b"online";
-    // const PRINTER_STATUS_OFFLINE: vector<u8> = b"offline";
-    const PRINTER_STATUS_BUSY: vector<u8> = b"busy";
-    const PRINT_STATUS_PENDING: vector<u8> = b"pending";
-    const PRINT_STATUS_PRINTING: vector<u8> = b"printing";
-    const PRINT_STATUS_COMPLETED: vector<u8> = b"completed";
-    // const PRINT_STATUS_FAILED: vector<u8> = b"failed";
-
-    // === Structs ===
-    public struct PrintJob has key {
+    /// === Structs ===
+    public struct PrintJob has key, store {
         id: UID,
         printer_id: ID,
         customer: address,
-        status: String,
-        paid_amount: u64,
-        start_time: option::Option<u64>,
-        end_time: option::Option<u64>,
+        is_completed: bool,
+        paid_amount: Balance<SUI>,
+        start_time: Option<u64>,
+        end_time: Option<u64>,
     }
 
-    // === Events ===
+    /// === Events ===
     public struct PrintJobCreated has copy, drop {
         job_id: ID,
         printer_id: ID,
@@ -38,75 +41,136 @@ module eureka::print_job {
 
     public struct PrintJobStatusUpdated has copy, drop {
         job_id: ID,
-        new_status: String,
+        new_status: bool,
     }
 
-    // === Public Functions ===
-    public fun create_print_job(
-        cap: &PrinterCap,
+    /// === Job Lifecycle Functions ===
+
+    /// Creates a new print job and assigns it to a printer
+    public entry fun create_and_assign_print_job(
         printer: &mut Printer,
         payment: Coin<SUI>,
         ctx: &mut TxContext,
-    ): ID {
-        let sender = tx_context::sender(ctx);
-        assert!(std::string::utf8(PRINTER_STATUS_ONLINE) == eureka::get_printer_status(printer), EPrinterBusy);
-        
-        let paid_amount = coin::value(&payment);
-        //assert!(paid_amount >= eureka::get_printer_price(printer), EPriceNotMet);
-
-        // Transfer payment to printer's earnings
-        eureka::add_earnings(printer, coin::into_balance(payment));
-
-        // Create print job
-        let job = PrintJob {
-            id: object::new(ctx),
-            printer_id: eureka::get_printer_id(printer),
-            customer: sender,
-            status: std::string::utf8(PRINT_STATUS_PENDING),
-            paid_amount,
-            start_time: option::none(),
-            end_time: option::none(),
-        };
-
-        let job_id = object::uid_to_inner(&job.id);
-
-        // Update printer status
-        eureka::update_printer_status(cap, printer, PRINTER_STATUS_BUSY);
+    ) {
+        let payment_value = coin::value(&payment);
+        let payment_balance = coin::into_balance(payment);
+        let (job, job_id) = create_job_object(printer, payment_balance, ctx);
 
         event::emit(PrintJobCreated {
             job_id,
             printer_id: eureka::get_printer_id(printer),
-            customer: sender,
-            paid_amount,
+            customer: ctx.sender(),
+            paid_amount: payment_value,
         });
-
-        transfer::share_object(job);
-        job_id
+        
+        add_print_job_field(printer, job_id, job);
     }
 
-    public fun update_print_job(
+    /// Marks a print job as started and sets printer status to busy
+    public entry fun start_print_job(
         cap: &PrinterCap,
         printer: &mut Printer,
         job: &mut PrintJob,
-        new_status: vector<u8>,
-        ctx: &mut TxContext,
+        clock: &clock::Clock,
     ) {
-        assert!(job.printer_id == eureka::get_printer_id(printer), ENotAuthorized);
-        
-        let current_epoch = tx_context::epoch(ctx);
-        
-        if (new_status == PRINT_STATUS_PRINTING) {
-            option::fill(&mut job.start_time, current_epoch);
-        } else if (new_status == PRINT_STATUS_COMPLETED) {
-            option::fill(&mut job.end_time, current_epoch);
-            eureka::update_printer_status(cap, printer, PRINTER_STATUS_ONLINE);
-        };
+        record_timestamp(&mut job.start_time, clock);
+        update_printer_status(cap, printer, false);
+    }
 
-        job.status = std::string::utf8(new_status);
+    /// Marks a print job as completed and sets printer status to available
+    public entry fun complete_print_job(
+        cap: &PrinterCap,
+        printer: &mut Printer,
+        job: &mut PrintJob,
+        clock: &clock::Clock,
+    ) {
+        verify_job_authorization(printer, job);
+        assert!(!job.is_completed, EPrinterBusy);
+
+        let amount = balance::value(&job.paid_amount);
+        let payment = balance::split(&mut job.paid_amount, amount);
+        add_fees(printer, payment);
         
+        job.is_completed = true;
+        emit_job_status_event(job, job.is_completed);
+        update_printer_status(cap, printer, job.is_completed);
+        record_timestamp(&mut job.end_time, clock);
+    }
+    
+    /// === Getter Functions ===
+
+    /// Checks if a print job is completed
+    public fun is_completed(job: &PrintJob): bool {
+        job.is_completed
+    }
+    
+    /// Gets the printer ID associated with a job
+    public fun get_printer_id(job: &PrintJob): ID {
+        job.printer_id
+    }
+    
+    /// Gets the customer address for a job
+    public fun get_customer(job: &PrintJob): address {
+        job.customer
+    }
+    
+    /// Gets the amount paid for a job
+    public fun get_paid_amount(job: &PrintJob): u64 {
+        balance::value(&job.paid_amount)
+    }
+    
+    /// Gets the start time of a job
+    public fun get_start_time(job: &PrintJob): Option<u64> {
+        *&job.start_time
+    }
+    
+    /// Gets the end time of a job
+    public fun get_end_time(job: &PrintJob): Option<u64> {
+        *&job.end_time
+    }
+    
+    /// === Internal Helper Functions ===
+
+    /// Creates a new PrintJob object with the specified parameters
+    fun create_job_object(
+        printer: &Printer, 
+        fee: Balance<SUI>, 
+        ctx: &mut TxContext
+    ): (PrintJob, ID) {
+        let sender = tx_context::sender(ctx);
+        
+        let job = PrintJob {
+            id: object::new(ctx),
+            printer_id: eureka::get_printer_id(printer),
+            customer: sender,
+            is_completed: false,
+            paid_amount: fee,
+            start_time: option::none(),
+            end_time: option::none(),
+        };
+        
+        let job_id = object::uid_to_inner(&job.id);
+        (job, job_id)
+    }
+    
+    /// Verifies that a job is authorized to be processed by a printer
+    fun verify_job_authorization(printer: &Printer, job: &PrintJob) {
+        assert!(job.printer_id == eureka::get_printer_id(printer), ENotAuthorized);
+    }
+    
+    /// Emits a job status update event
+    fun emit_job_status_event(job: &PrintJob, new_status: bool) {
         event::emit(PrintJobStatusUpdated {
             job_id: object::uid_to_inner(&job.id),
-            new_status: std::string::utf8(new_status),
+            new_status,
         });
+    }
+
+    /// Records a timestamp for a time field if not already set
+    fun record_timestamp(time_field: &mut Option<u64>, clock: &clock::Clock) {
+        if (option::is_none(time_field)) {
+            let now = clock::timestamp_ms(clock);
+            option::fill(time_field, now);
+        };
     }
 } 

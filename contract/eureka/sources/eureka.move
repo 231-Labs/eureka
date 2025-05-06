@@ -1,84 +1,61 @@
 module eureka::eureka {
+
     use std::string::{ String };
-    use sui::{ event, table::{ Self, Table }, balance::{ Self, Balance }, coin::{ Self, Coin }, sui::SUI };
+    use sui::{ 
+        event,
+        table::{ Self, Table },
+        balance::{ Self, Balance },
+        coin::{ Self },
+        sui::SUI 
+    };
 
-    // === Errors ===
-    const EPrinterBusy: u64 = 1;
+    /// === Errors ===
     const ENotAuthorized: u64 = 1;
-    // const EPriceNotMet: u64 = 3;
 
-    // === Constants ===
-    const PRINTER_STATUS_ONLINE: vector<u8> = b"online";
-    const PRINTER_STATUS_BUSY: vector<u8> = b"busy";
-    const PRINTER_STATUS_OFFLINE: vector<u8> = b"offline";
+    /// === One Time Witness ===
+    public struct EUREKA has drop {}
 
-    const PRINT_STATUS_PENDING: vector<u8> = b"pending";
-    const PRINT_STATUS_PRINTING: vector<u8> = b"printing";
-    const PRINT_STATUS_COMPLETED: vector<u8> = b"completed";
-    // const PRINT_STATUS_FAILED: vector<u8> = b"failed";
-
-    // === Structs ===
+    /// === Structs ===
+    
+    /// Registry for all printers in the system
     public struct PrinterRegisty has key {
         id: UID,
         printers: Table<ID, address>,
     }
 
+    /// Represents a 3D printer with associated properties and balance
     public struct Printer has key {
         id: UID,
         owner: address,
         alias: String,
-        status: String,
-        // price: u64,
-        earnings: Balance<SUI>,
+        online: bool,
+        pool: Balance<SUI>,
     }
 
+    /// Capability object that authorizes printer operations
     public struct PrinterCap has key, store {
         id: UID,
         printer_id: ID,
     }
 
-    public struct PrintJob has key {
-        id: UID,
-        printer_id: ID,
-        customer: address,
-        status: String,
-        paid_amount: u64,
-        start_time: Option<u64>,
-        end_time: Option<u64>,
-    }
-
-    // === One Time Witness ===
-
-    public struct EUREKA has drop {}
-
-    // === Events ===
-
+    /// === Events ===
+    
+    /// Emitted when a new printer is registered in the system
     public struct PrinterRegistered has copy, drop {
         printer_id: ID,
         owner: address,
-        status: String,
-        //price: u64,
+        status: bool,
     }
 
-    public struct PrintJobCreated has copy, drop {
-        job_id: ID,
-        printer_id: ID,
-        customer: address,
-        paid_amount: u64,
-    }
-
-    public struct PrintJobStatusUpdated has copy, drop {
-        job_id: ID,
-        new_status: String,
-    }
-
+    /// Emitted when a printer's status is updated
     public struct PrinterStatusUpdated has copy, drop {
         printer_id: ID,
-        new_status: String,
+        new_status: bool,
     }
 
-    /// == Initializer ==
+    /// === Initialization ===
     
+    /// Initializes the module with a registry
     fun init(otw: EUREKA, ctx: &mut TxContext) {
         let registry = PrinterRegisty {
             id: object::new(ctx),
@@ -89,8 +66,9 @@ module eureka::eureka {
         let EUREKA {} = otw;
     }
 
-    // === Public Functions ===
-    #[allow(lint(self_transfer))]
+    /// === Public Entry Functions ===
+    
+    /// Registers a new printer in the registry
     public entry fun register_printer(
         state: &mut PrinterRegisty,
         alias: String,
@@ -102,9 +80,8 @@ module eureka::eureka {
             id: object::new(ctx),
             owner: sender,
             alias,  
-            status: std::string::utf8(PRINTER_STATUS_OFFLINE),
-            //price,
-            earnings: balance::zero(),
+            online: false,
+            pool: balance::zero(),
         };
 
         let printer_id = object::uid_to_inner(&printer.id);
@@ -121,132 +98,70 @@ module eureka::eureka {
         event::emit(PrinterRegistered {
             printer_id,
             owner: sender,
-            status: std::string::utf8(PRINTER_STATUS_OFFLINE),
+            status: false,
         });
     }
 
-    public entry fun create_print_job(
-        printer: &mut Printer,
-        payment: Coin<SUI>,
-        ctx: &mut TxContext,
-    ): ID {
-        let sender = tx_context::sender(ctx);
-        assert!(std::string::utf8(PRINTER_STATUS_ONLINE) == printer.status, EPrinterBusy);
-        
-        let paid_amount = coin::value(&payment);
-        //assert!(paid_amount >= printer.price, EPriceNotMet);
-
-        // Transfer payment to printer's earnings
-        balance::join(&mut printer.earnings, coin::into_balance(payment));
-
-        // Create print job
-        let job = PrintJob {
-            id: object::new(ctx),
-            printer_id: object::uid_to_inner(&printer.id),
-            customer: sender,
-            status: std::string::utf8(PRINT_STATUS_PENDING),
-            paid_amount,
-            start_time: option::none(),
-            end_time: option::none(),
-        };
-
-        let job_id = object::uid_to_inner(&job.id);
-
-        // Update printer status
-        printer.status = std::string::utf8(PRINTER_STATUS_BUSY);
-
-        event::emit(PrintJobCreated {
-            job_id,
-            printer_id: object::uid_to_inner(&printer.id),
-            customer: sender,
-            paid_amount,
-        });
-
-        event::emit(PrinterStatusUpdated {
-            printer_id: object::uid_to_inner(&printer.id),
-            new_status: std::string::utf8(PRINTER_STATUS_BUSY),
-        });
-
-        transfer::share_object(job);
-        job_id
-    }
-
-    public entry fun update_print_job(
-        _cap: &PrinterCap,
-        printer: &mut Printer,
-        job: &mut PrintJob,
-        new_status: vector<u8>,
-        ctx: &mut TxContext,
-    ) {
-        assert!(job.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
-        
-        let current_epoch = tx_context::epoch(ctx);
-        
-        if (new_status == PRINT_STATUS_PRINTING) {
-            option::fill(&mut job.start_time, current_epoch);
-        } else if (new_status == PRINT_STATUS_COMPLETED) {
-            option::fill(&mut job.end_time, current_epoch);
-            printer.status = std::string::utf8(PRINTER_STATUS_ONLINE);
-            
-            event::emit(PrinterStatusUpdated {
-                printer_id: object::uid_to_inner(&printer.id),
-                new_status: std::string::utf8(PRINTER_STATUS_ONLINE),
-            });
-        };
-
-        job.status = std::string::utf8(new_status);
-        
-        event::emit(PrintJobStatusUpdated {
-            job_id: object::uid_to_inner(&job.id),
-            new_status: std::string::utf8(new_status),
-        });
-    }
-
-    public entry fun withdraw_earnings(
+    /// Withdraws accumulated fees from a printer
+    public entry fun withdraw_fees(
         cap: &PrinterCap,
         printer: &mut Printer,
         ctx: &mut TxContext,
     ) {
         assert!(cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
-        let amount = balance::value(&printer.earnings);
-        let coin = coin::from_balance(balance::split(&mut printer.earnings, amount), ctx);
+        let amount = balance::value(&printer.pool);
+        let coin = coin::from_balance(balance::split(&mut printer.pool, amount), ctx);
         transfer::public_transfer(coin, tx_context::sender(ctx));
     }
 
-    public entry fun update_printer_status(
+    /// === Status Management Functions ===
+    
+    /// Updates a printer's online status
+    public fun update_printer_status(
         cap: &PrinterCap,
         printer: &mut Printer,
-        new_status: vector<u8>,
+        new_status: bool,
     ) {
         assert!(cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
-        printer.status = std::string::utf8(new_status);
+        printer.online = new_status;
         
         event::emit(PrinterStatusUpdated {
             printer_id: object::uid_to_inner(&printer.id),
-            new_status: std::string::utf8(new_status),
+            new_status,
         });
     }
 
-    // === Public View Functions ===
+    /// === Getter Functions ===
+    
+    /// Gets the ID of a printer
     public fun get_printer_id(printer: &Printer): ID {
         object::uid_to_inner(&printer.id)
     }
 
-    public fun get_printer_status(printer: &Printer): String {
-        printer.status
+    /// Gets the online status of a printer
+    public fun get_printer_status(printer: &Printer): bool {
+        printer.online
     }
 
-    // public fun get_printer_price(printer: &Printer): u64 {
-    //     printer.price
-    // }
-
+    /// Gets the owner address of a printer
     public fun get_printer_owner(printer: &Printer): address {
         printer.owner
     }
 
-    // === Public Package Functions ===
-    public(package) fun add_earnings(printer: &mut Printer, payment: Balance<SUI>) {
-        balance::join(&mut printer.earnings, payment);
+    /// === Package-only Functions ===
+    
+    /// Adds fees to the printer's pool
+    public(package) fun add_fees(printer: &mut Printer, payment: Balance<SUI>) {
+        balance::join(&mut printer.pool, payment);
+    }
+    
+    /// Helper function to add a print job as a dynamic field
+    public(package) fun add_print_job_field<K: copy + drop + store, V: key + store>(
+        printer: &mut Printer,
+        k: K,
+        v: V
+    ) {
+        sui::dynamic_object_field::add(&mut printer.id, k, v);
     }
 }
 
