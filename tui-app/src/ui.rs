@@ -278,25 +278,22 @@ fn draw_registration(f: &mut Frame, app: &mut App) {
         ]
     } else {
         vec![
-        Line::from(vec![
-            Span::styled("Q", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
-            Span::raw(" QUIT"),
-            Span::raw("   "),
-            Span::styled("O", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
-            Span::raw(" TOGGLE STATUS"),
-            Span::raw("   "),
-            Span::styled("H", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
-            Span::raw(" HARVEST REWARDS"),
-            Span::raw("   "),
-            Span::styled("P", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
-            Span::raw(" 3D Print"),
-            Span::raw("   "),
-            Span::styled("S", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
-            Span::raw(" Stop Script"),
-            Span::raw("   "),
-            Span::styled("E", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
-            Span::raw(" Stop Printing"),
-        ]),
+            Line::from(vec![
+                Span::styled("Q", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+                Span::raw(" QUIT"),
+                Span::raw("   "),
+                Span::styled("O", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+                Span::raw(" TOGGLE STATUS"),
+                Span::raw("   "),
+                Span::styled("H", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+                Span::raw(" HARVEST REWARDS"),
+                Span::raw("   "),
+                Span::styled("P", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+                Span::raw(" 3D Print"),
+                Span::raw("   "),
+                Span::styled("E", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+                Span::raw(" Stop Printing"),
+            ]),
         ]
     };
     
@@ -716,9 +713,6 @@ fn draw_main(f: &mut Frame, app: &mut App) {
                 Span::raw("   "),
                 Span::styled("P", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
                 Span::raw(" 3D Print"),
-                Span::raw("   "),
-                Span::styled("S", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
-                Span::raw(" Stop Script"),
                 Span::raw("   "),
                 Span::styled("E", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
                 Span::raw(" Stop Printing"),

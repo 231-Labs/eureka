@@ -523,39 +523,25 @@ impl App {
     }
 
     pub async fn run_stop_script(app: Arc<Mutex<App>>) -> Result<()> {
-        let mut app_guard = app.lock().await;
-        app_guard.set_message(MessageType::Info, "Stopping print...".to_string());
-        drop(app_guard);
+        // 更新初始狀態
+        {
+            let mut app_guard = app.lock().await;
+            app_guard.set_message(MessageType::Info, "Stopping print...".to_string());
+        }
 
         let app_clone = Arc::clone(&app);
         tokio::spawn(async move {
-            let mut app = app_clone.lock().await;
-            match tokio::process::Command::new("sh")
+            // 使用 spawn 啟動命令，但不等待其完成
+            let _ = tokio::process::Command::new("sh")
                 .current_dir("Gcode-Transmit")
                 .arg("Gcode-Stop.sh")
-                .output()
-                .await {
-                    Ok(output) => {
-                        if !output.status.success() {
-                            if let Ok(error) = String::from_utf8(output.stderr) {
-                                app.print_status = PrintStatus::Error(error.clone());
-                                app.set_message(MessageType::Error, format!("Script failed: {}", error));
-                            } else {
-                                app.print_status = PrintStatus::Error("Script failed with non-utf8 error".to_string());
-                                app.set_message(MessageType::Error, "Script failed with non-utf8 error".to_string());
-                            }
-                        } else {
-                            // 重置狀態
-                            app.script_status = ScriptStatus::Idle;
-                            app.print_status = PrintStatus::Idle;
-                            app.set_message(MessageType::Success, "Print stopped successfully".to_string());
-                        }
-                    }
-                    Err(e) => {
-                        app.print_status = PrintStatus::Error(e.to_string());
-                        app.set_message(MessageType::Error, format!("Failed to execute script: {}", e));
-                    }
-                }
+                .spawn();
+
+            // 直接更新狀態，不等待命令完成
+            let mut app = app_clone.lock().await;
+            app.script_status = ScriptStatus::Idle;
+            app.print_status = PrintStatus::Idle;
+            app.set_message(MessageType::Success, "Stop command sent".to_string());
         });
         Ok(())
     }
