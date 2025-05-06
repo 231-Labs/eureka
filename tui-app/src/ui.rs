@@ -604,7 +604,7 @@ fn draw_main(f: &mut Frame, app: &mut App) {
         let bottega_items: Vec<ListItem> = app.bottega_items
             .iter()
             .map(|item| {
-                ListItem::new(format!("◈ {} [Printed: {}]", item.name, item.printed_count))
+                ListItem::new(format!("◈ {} [Printed: {}]", item.alias, item.printed_count))
                     .style(Style::default().fg(accent_color))
             })
             .collect();

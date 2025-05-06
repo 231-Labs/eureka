@@ -104,7 +104,7 @@ impl App {
         let bottega_items = match wallet.get_user_bottega(wallet.get_active_address().await?).await {
             Ok(items) => items,
             Err(_) => vec![BottegaItem {
-                name: "Error loading models".to_string(),
+                alias: "Error loading models".to_string(),
                 blob_id: String::new(),
                 printed_count: 0,
             }]
@@ -544,7 +544,7 @@ impl App {
     pub async fn handle_model_selection(&mut self, download_only: bool) -> Result<()> {
         if let Some(selected) = self.bottega_state.selected() {
             if let Some(item) = self.bottega_items.get(selected) {
-                if item.name != "No printable models found" {
+                if item.alias != "No printable models found" {
                     let blob_id = item.blob_id.clone();
                     // 下載檔案
                     self.download_3d_model(&blob_id).await?;
