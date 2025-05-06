@@ -1,7 +1,7 @@
 module eureka::print_job {
 
     use sui::sui::SUI;
-    use std::string::String;
+    use std::string::{ String };
     use sui::{ balance::{ Self, Balance }, clock::{ Self } };
 
     /// === Structs =================================================
@@ -11,6 +11,7 @@ module eureka::print_job {
         id: UID,
         alias: String,
         customer: address,
+        printer_id: ID,
         is_completed: bool,
         paid_amount: Balance<SUI>,
         start_time: Option<u64>,
@@ -24,12 +25,14 @@ module eureka::print_job {
         customer: address,
         alias: String,
         paid_amount: Balance<SUI>,
+        printer_id: ID,
         ctx: &mut TxContext,
     ): PrintJob {
         let job = PrintJob {
             id: object::new(ctx),
             alias,
             customer,
+            printer_id,
             is_completed: false,
             paid_amount,
             start_time: option::none(),

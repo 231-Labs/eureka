@@ -142,14 +142,18 @@ module eureka::eureka {
     ) {
         let payment_value = coin::value(&payment);
         let payment_balance = coin::into_balance(payment);
+        let printer_id = object::uid_to_inner(&printer.id);
         let job = create_print_job(
             ctx.sender(),
             alias,
             payment_balance,
+            printer_id,
             ctx,
         );
-        // Add job to printer as dynamic field using alias as key
-        add_print_job_field(printer, alias, job);
+        
+        
+        // Add job to printer as dynamic field
+        add_print_job_field(printer, b"current_job", job);
 
         event::emit(PrintJobCreated {
             job_id: get_print_job_id_via_printer(printer),
@@ -291,18 +295,17 @@ module eureka::eureka {
     /// 
     /// Gets fee amount from a print job via printer
     fun get_print_job_fees_via_printer(printer: &Printer): u64 {
-        get_print_job_fees(dof::borrow(&printer.id, get_print_job_alias_via_printer(printer)))
+        get_print_job_fees(dof::borrow(&printer.id, b"current_job"))
     }
 
     // Gets print job ID via printer
     fun get_print_job_id_via_printer(printer: &Printer): ID {
-        let alias: String = get_print_job_alias_via_printer(printer);
-        get_print_job_id(dof::borrow(&printer.id, alias))
+        get_print_job_id(dof::borrow(&printer.id, b"current_job"))
     }
 
     // Gets print job alias via printer
     fun get_print_job_alias_via_printer(printer: &Printer): String {
-        get_print_job_alias(dof::borrow(&printer.id, b"print_job"))
+        get_print_job_alias(dof::borrow(&printer.id, b"current_job"))
     }
 
     /// === Printer Getter Functions ======
