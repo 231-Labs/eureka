@@ -135,7 +135,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                             }
                         }
                         //Start-Start Printing
-                        KeyCode::Char('s') => {
+                        KeyCode::Char('p') => {
                             if let Err(e) = app.handle_model_selection(false).await {
                                 app.error_message = Some(format!("Error: {}", e));
                             }
@@ -148,18 +148,17 @@ async fn run_app<B: ratatui::backend::Backend>(
                         //End
 
                         //Start-Stop Printing
+                        KeyCode::Char('s') => {
+                            if let Err(e) = app.run_stop_script().await {
+                                app.error_message = Some(format!("Error: {}", e));
+                            }
+                        }
                         KeyCode::Char('e') => {
                             if let Err(e) = app.run_stop_script().await {
                                 app.error_message = Some(format!("Error: {}", e));
                             }
                         }
-                        KeyCode::Enter => {
-                            if let Err(e) = app.run_stop_script().await {
-                                app.error_message = Some(format!("Error: {}", e));
-                            }
-                        }
                         _ => {}
-                        //End
                     }
                 }
             }

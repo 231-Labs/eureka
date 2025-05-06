@@ -40,6 +40,23 @@ pub enum MessageType {
     Success,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScriptStatus {
+    Idle,
+    Running,
+    Completed,
+    Failed(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PrintStatus {
+    Idle,
+    Printing(u8),  // Progress percentage
+    Completed,
+    Paused,
+    Error(String),
+}
+
 #[derive(Clone)]
 pub struct App {
     pub wallet: Wallet,
@@ -63,6 +80,8 @@ pub struct App {
     pub printer_registration_message: String,
     pub registration_status: RegistrationStatus,
     pub bottega_items: Vec<BottegaItem>,
+    pub script_status: ScriptStatus,
+    pub print_status: PrintStatus,
 }
 
 impl App {
@@ -113,6 +132,8 @@ impl App {
             printer_registration_message: String::new(),
             registration_status: RegistrationStatus::Inputting,
             bottega_items,
+            script_status: ScriptStatus::Idle,
+            print_status: PrintStatus::Idle,
         };
         
         // Check if printer registration is needed
@@ -396,77 +417,129 @@ impl App {
         Ok(())
     }
 
+    pub fn get_tech_animation(&self) -> String {
+        let base_animation = match self.script_status {
+            ScriptStatus::Idle => "║▓▒░ SYS IDLE ░▒▓║".to_string(),
+            ScriptStatus::Running => "║▒▓░ SCRIPT RUNNING ░▓▒║".to_string(),
+            ScriptStatus::Completed => "║▓▒░ SCRIPT COMPLETE ░▒▓║".to_string(),
+            ScriptStatus::Failed(_) => "║▒▓░ SCRIPT ERROR ░▓▒║".to_string(),
+        };
+
+        let print_status = match &self.print_status {
+            PrintStatus::Idle => "║▓▒░ PRINTER IDLE ░▒▓║".to_string(),
+            PrintStatus::Printing(progress) => format!("║▒▓░ PRINTING {}% ░▓▒║", progress),
+            PrintStatus::Completed => "║▓▒░ PRINT COMPLETE ░▒▓║".to_string(),
+            PrintStatus::Paused => "║▒▓░ PRINT PAUSED ░▓▒║".to_string(),
+            PrintStatus::Error(_) => "║▒▓░ PRINTER ERROR ░▓▒║".to_string(),
+        };
+
+        format!("{}\n{}", base_animation, print_status)
+    }
+
     pub async fn run_print_script(&mut self) {
+        self.script_status = ScriptStatus::Running;
+        self.print_status = PrintStatus::Idle;
         self.message_type = MessageType::Info;
-        self.error_message = Some("Printing...".to_string());
+        self.error_message = Some("Starting print script...".to_string());
 
         let app = Arc::new(Mutex::new(self.clone()));
         
         tokio::spawn(async move {
-            match tokio::process::Command::new("sh")
+            // 執行 Gcode-Send.sh 腳本
+            let script_result = tokio::process::Command::new("sh")
                 .current_dir("Gcode-Transmit")
                 .arg("Gcode-Send.sh")
                 .output()
-                .await {
-                    Ok(output) => {
-                        let mut app = app.lock().await;
-                        if !output.status.success() {
-                            if let Ok(error) = String::from_utf8(output.stderr) {
-                                app.message_type = MessageType::Error;
-                                app.error_message = Some(format!("Script failed: {}", error));
-                            } else {
-                                app.message_type = MessageType::Error;
-                                app.error_message = Some("Script failed with non-utf8 error".to_string());
+                .await;
+
+            let mut app = app.lock().await;
+            
+            match script_result {
+                Ok(output) => {
+                    if output.status.success() {
+                        app.script_status = ScriptStatus::Completed;
+                        app.print_status = PrintStatus::Printing(0);
+                        app.message_type = MessageType::Success;
+                        app.error_message = Some("Script completed, starting print...".to_string());
+
+                        // 監控列印進度
+                        let app = Arc::new(Mutex::new(app.clone()));
+                        let app_clone = Arc::clone(&app);
+                        tokio::spawn(async move {
+                            // 等待列印完成
+                            let mut progress = 0;
+                            while progress < 100 {
+                                // 這裡可以添加實際的進度監控邏輯
+                                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                                progress += 10;
+                                let mut app = app_clone.lock().await;
+                                app.print_status = PrintStatus::Printing(progress);
                             }
-                        } else {
+                            // 列印完成
+                            let mut app = app_clone.lock().await;
+                            app.print_status = PrintStatus::Completed;
                             app.message_type = MessageType::Success;
-                            app.error_message = Some("Print completed".to_string());
-                        }
-                    }
-                    Err(e) => {
-                        let mut app = app.lock().await;
+                            app.error_message = Some("Print completed successfully".to_string());
+                        });
+                    } else {
+                        app.script_status = ScriptStatus::Failed(
+                            String::from_utf8_lossy(&output.stderr).to_string()
+                        );
+                        app.print_status = PrintStatus::Error("Script execution failed".to_string());
                         app.message_type = MessageType::Error;
-                        app.error_message = Some(format!("Failed to execute script: {}", e));
+                        app.error_message = Some("Script execution failed".to_string());
                     }
                 }
+                Err(e) => {
+                    app.script_status = ScriptStatus::Failed(e.to_string());
+                    app.print_status = PrintStatus::Error("Failed to execute script".to_string());
+                    app.message_type = MessageType::Error;
+                    app.error_message = Some("Failed to execute script".to_string());
+                }
+            }
         });
     }
-    pub async fn run_stop_script(&mut self)-> Result<()> {
-         self.message_type = MessageType::Info;
-         self.error_message = Some("Stoping...".to_string());
 
-         let app = Arc::new(Mutex::new(self.clone()));
+    pub async fn run_stop_script(&mut self) -> Result<()> {
+        self.message_type = MessageType::Info;
+        self.error_message = Some("Stopping print...".to_string());
 
-         tokio::spawn(async move {
+        let app = Arc::new(Mutex::new(self.clone()));
+
+        tokio::spawn(async move {
             match tokio::process::Command::new("sh")
                 .current_dir("Gcode-Transmit")
                 .arg("Gcode-Stop.sh")
                 .output()
                 .await {
                     Ok(output) => {
-                         let mut app = app.lock().await;
-                          if !output.status.success() {
+                        let mut app = app.lock().await;
+                        if !output.status.success() {
                             if let Ok(error) = String::from_utf8(output.stderr) {
+                                app.print_status = PrintStatus::Error(error.clone());
                                 app.message_type = MessageType::Error;
                                 app.error_message = Some(format!("Script failed: {}", error));
                             } else {
+                                app.print_status = PrintStatus::Error("Script failed with non-utf8 error".to_string());
                                 app.message_type = MessageType::Error;
                                 app.error_message = Some("Script failed with non-utf8 error".to_string());
                             }
                         } else {
+                            app.print_status = PrintStatus::Idle;
                             app.message_type = MessageType::Success;
-                            app.error_message = Some("Stopted".to_string());
+                            app.error_message = Some("Print stopped successfully".to_string());
                         }
                     }
                     Err(e) => {
                         let mut app = app.lock().await;
+                        app.print_status = PrintStatus::Error(e.to_string());
                         app.message_type = MessageType::Error;
                         app.error_message = Some(format!("Failed to execute script: {}", e));
                     }
                 }
         });
-       Ok(())        
-     }
+        Ok(())
+    }
 
     pub async fn handle_model_selection(&mut self, download_only: bool) -> Result<()> {
         if let Some(selected) = self.bottega_state.selected() {

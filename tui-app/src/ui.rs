@@ -288,8 +288,11 @@ fn draw_registration(f: &mut Frame, app: &mut App) {
             Span::styled("H", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
             Span::raw(" HARVEST REWARDS"),
             Span::raw("   "),
-            Span::styled("S", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+            Span::styled("P", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
             Span::raw(" 3D Print"),
+            Span::raw("   "),
+            Span::styled("S", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+            Span::raw(" Stop Script"),
             Span::raw("   "),
             Span::styled("E", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
             Span::raw(" Stop Printing"),
@@ -563,18 +566,7 @@ fn draw_main(f: &mut Frame, app: &mut App) {
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(primary_color));
     
-    let tech_animations = vec![
-        "║▓▒░ SYS ACTIVE ░▒▓║",
-        "║▒▓░ SCANNING... ░▓▒║",
-        "║▓▒░ DATA FLOW ░▒▓║",
-        "║▒▓░ COMPUTING ░▓▒║",
-        "║▓▒░ ANALYZING ░▒▓║",
-        "║▒▓░ CONNECTING ░▓▒║",
-        "║▓▒░ PROCESSING ░▒▓║",
-        "║▒▓░ SYNCING... ░▓▒║",
-    ];
-    
-    let tech_text = Paragraph::new(tech_animations[animation_frame])
+    let tech_text = Paragraph::new(app.get_tech_animation())
         .style(Style::default().fg(if app.is_online { Color::Cyan } else { Color::Magenta }))
         .alignment(Alignment::Center)
         .block(tech_block);
@@ -724,8 +716,11 @@ fn draw_main(f: &mut Frame, app: &mut App) {
                 Span::styled("H", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
                 Span::raw(" HARVEST REWARDS"),
                 Span::raw("   "),
-                Span::styled("S", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+                Span::styled("P", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
                 Span::raw(" 3D Print"),
+                Span::raw("   "),
+                Span::styled("S", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+                Span::raw(" Stop Script"),
                 Span::raw("   "),
                 Span::styled("E", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
                 Span::raw(" Stop Printing"),
