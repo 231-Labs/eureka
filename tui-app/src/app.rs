@@ -5,7 +5,6 @@ use crate::constants::{NETWORKS, AGGREGATOR_URL};
 use anyhow::Result;
 use crate::transactions::TransactionBuilder;
 use sui_sdk::types::base_types::ObjectID;
-use std::process::Command;
 use futures;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -53,7 +52,7 @@ pub enum PrintStatus {
     Idle,
     Printing(u8),  // Progress percentage
     Completed,
-    Paused,
+    // Paused,
     Error(String),
 }
 
@@ -399,14 +398,15 @@ impl App {
         let aggregator_url = AGGREGATOR_URL;
         let output_path = PathBuf::from("Gcode-Transmit/test.stl");
         
-        // 使用 curl 下載文件，添加 -s (silent) 和 -S (show error) 參數
-        let status = Command::new("curl")
+        // 使用 tokio::process::Command 非同步執行
+        let status = tokio::process::Command::new("curl")
             .arg("-s")
             .arg("-S")
             .arg(format!("{}/v1/blobs/{}", aggregator_url, blob_id))
             .arg("-o")
             .arg(&output_path)
-            .status()?;
+            .status()
+            .await?;
 
         if !status.success() {
             return Err(anyhow::anyhow!("Failed to download 3D model"));
@@ -418,67 +418,60 @@ impl App {
     }
 
     pub fn get_tech_animation(&self) -> String {
-        let base_animation = match self.script_status {
-            ScriptStatus::Idle => "║▓▒░ SYS IDLE ░▒▓║".to_string(),
-            ScriptStatus::Running => "║▒▓░ SCRIPT RUNNING ░▓▒║".to_string(),
-            ScriptStatus::Completed => "║▓▒░ SCRIPT COMPLETE ░▒▓║".to_string(),
-            ScriptStatus::Failed(_) => "║▒▓░ SCRIPT ERROR ░▓▒║".to_string(),
-        };
-
-        let print_status = match &self.print_status {
-            PrintStatus::Idle => "║▓▒░ PRINTER IDLE ░▒▓║".to_string(),
+        // 只顯示一種狀態：優先顯示 print_status
+        match &self.print_status {
+            PrintStatus::Idle => {
+                // 沒有列印時才顯示 script_status
+                match self.script_status {
+                    ScriptStatus::Idle => "║▓▒░ SYS IDLE ░▒▓║".to_string(),
+                    ScriptStatus::Running => "║▒▓░ SCRIPT RUNNING ░▓▒║".to_string(),
+                    ScriptStatus::Completed => "║▓▒░ SCRIPT COMPLETE ░▒▓║".to_string(),
+                    ScriptStatus::Failed(_) => "║▒▓░ SCRIPT ERROR ░▓▒║".to_string(),
+                }
+            }
             PrintStatus::Printing(progress) => format!("║▒▓░ PRINTING {}% ░▓▒║", progress),
             PrintStatus::Completed => "║▓▒░ PRINT COMPLETE ░▒▓║".to_string(),
-            PrintStatus::Paused => "║▒▓░ PRINT PAUSED ░▓▒║".to_string(),
             PrintStatus::Error(_) => "║▒▓░ PRINTER ERROR ░▓▒║".to_string(),
-        };
-
-        format!("{}\n{}", base_animation, print_status)
+        }
     }
 
-    pub async fn run_print_script(&mut self) {
-        self.script_status = ScriptStatus::Running;
-        self.print_status = PrintStatus::Idle;
-        self.message_type = MessageType::Info;
-        self.error_message = Some("Starting print script...".to_string());
-
-        let app = Arc::new(Mutex::new(self.clone()));
+    pub async fn run_print_script(app: Arc<Mutex<App>>) {
+        let mut app_guard = app.lock().await;
+        app_guard.script_status = ScriptStatus::Running;
+        app_guard.print_status = PrintStatus::Idle;
+        app_guard.message_type = MessageType::Info;
+        app_guard.error_message = Some("Starting print script...".to_string());
+        drop(app_guard);
         
+        let app_clone = Arc::clone(&app);
         tokio::spawn(async move {
-            // 執行 Gcode-Send.sh 腳本
+            let mut app = app_clone.lock().await;
             let script_result = tokio::process::Command::new("sh")
                 .current_dir("Gcode-Transmit")
                 .arg("Gcode-Send.sh")
                 .output()
                 .await;
 
-            let mut app = app.lock().await;
-            
             match script_result {
                 Ok(output) => {
                     if output.status.success() {
                         app.script_status = ScriptStatus::Completed;
                         app.print_status = PrintStatus::Printing(0);
-                        app.message_type = MessageType::Success;
+                        app.message_type = MessageType::Info;
                         app.error_message = Some("Script completed, starting print...".to_string());
-
-                        // 監控列印進度
-                        let app = Arc::new(Mutex::new(app.clone()));
-                        let app_clone = Arc::clone(&app);
+                        drop(app);
+                        let app_clone2 = Arc::clone(&app_clone);
                         tokio::spawn(async move {
-                            // 等待列印完成
                             let mut progress = 0;
                             while progress < 100 {
-                                // 這裡可以添加實際的進度監控邏輯
                                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                                 progress += 10;
-                                let mut app = app_clone.lock().await;
+                                let mut app = app_clone2.lock().await;
                                 app.print_status = PrintStatus::Printing(progress);
                             }
-                            // 列印完成
-                            let mut app = app_clone.lock().await;
+                            let mut app = app_clone2.lock().await;
                             app.print_status = PrintStatus::Completed;
-                            app.message_type = MessageType::Success;
+                            app.message_type = MessageType::Info;
                             app.error_message = Some("Print completed successfully".to_string());
                         });
                     } else {
@@ -500,20 +493,21 @@ impl App {
         });
     }
 
-    pub async fn run_stop_script(&mut self) -> Result<()> {
-        self.message_type = MessageType::Info;
-        self.error_message = Some("Stopping print...".to_string());
+    pub async fn run_stop_script(app: Arc<Mutex<App>>) -> Result<()> {
+        let mut app_guard = app.lock().await;
+        app_guard.message_type = MessageType::Info;
+        app_guard.error_message = Some("Stopping print...".to_string());
+        drop(app_guard);
 
-        let app = Arc::new(Mutex::new(self.clone()));
-
+        let app_clone = Arc::clone(&app);
         tokio::spawn(async move {
+            let mut app = app_clone.lock().await;
             match tokio::process::Command::new("sh")
                 .current_dir("Gcode-Transmit")
                 .arg("Gcode-Stop.sh")
                 .output()
                 .await {
                     Ok(output) => {
-                        let mut app = app.lock().await;
                         if !output.status.success() {
                             if let Ok(error) = String::from_utf8(output.stderr) {
                                 app.print_status = PrintStatus::Error(error.clone());
@@ -531,7 +525,6 @@ impl App {
                         }
                     }
                     Err(e) => {
-                        let mut app = app.lock().await;
                         app.print_status = PrintStatus::Error(e.to_string());
                         app.message_type = MessageType::Error;
                         app.error_message = Some(format!("Failed to execute script: {}", e));
@@ -541,21 +534,29 @@ impl App {
         Ok(())
     }
 
-    pub async fn handle_model_selection(&mut self, download_only: bool) -> Result<()> {
-        if let Some(selected) = self.bottega_state.selected() {
-            if let Some(item) = self.bottega_items.get(selected) {
-                if item.alias != "No printable models found" {
-                    let blob_id = item.blob_id.clone();
-                    // 下載檔案
-                    self.download_3d_model(&blob_id).await?;
-                    
-                    // 如果不是只下載，則執行列印腳本
-                    if !download_only {
-                        self.run_print_script().await;
+    pub async fn handle_model_selection(app: Arc<Mutex<App>>, download_only: bool) -> Result<()> {
+        let app_clone = Arc::clone(&app);
+        tokio::spawn(async move {
+            let app_guard = app_clone.lock().await;
+            if let Some(selected) = app_guard.bottega_state.selected() {
+                if let Some(item) = app_guard.bottega_items.get(selected) {
+                    if item.alias != "No printable models found" {
+                        let blob_id = item.blob_id.clone();
+                        drop(app_guard);
+                        {
+                            let mut app = app_clone.lock().await;
+                            if let Err(e) = app.download_3d_model(&blob_id).await {
+                                app.error_message = Some(format!("下載模型失敗: {}", e));
+                                return;
+                            }
+                        }
+                        if !download_only {
+                            App::run_print_script(Arc::clone(&app_clone)).await;
+                        }
                     }
                 }
             }
-        }
+        });
         Ok(())
     }
 

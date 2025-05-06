@@ -9,6 +9,8 @@ use ratatui::{
     Terminal,
 };
 use std::{io, time::Duration};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 mod app;
 mod constants;
@@ -29,10 +31,10 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // 初始化應用程序狀態
-    let mut app = App::new().await?;
+    let app = Arc::new(Mutex::new(App::new().await?));
 
     // 運行應用
-    let result = run_app(&mut terminal, &mut app).await;
+    let result = run_app(&mut terminal, Arc::clone(&app)).await;
 
     // 恢復終端
     disable_raw_mode()?;
@@ -52,31 +54,36 @@ async fn main() -> Result<()> {
 
 async fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
-    app: &mut App,
+    app: Arc<Mutex<App>>,
 ) -> Result<()> {
     loop {
-        terminal.draw(|f| ui::draw(f, app))?;
+        let app_arc = Arc::clone(&app);
+        {
+            let mut app_guard = app_arc.lock().await;
+            terminal.draw(|f| ui::draw(f, &mut app_guard)).unwrap();
+        }
 
         if crossterm_event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = crossterm_event::read()? {
-                if app.is_registering_printer {
+                let mut app_guard = app_arc.lock().await;
+                if app_guard.is_registering_printer {
                     // 在註冊畫面時，只處理註冊相關的按鍵
                     match key.code {
                         KeyCode::Char('q') => return Ok(()),
                         KeyCode::Esc => return Ok(()),
                         KeyCode::Char(c) => {
-                            if let Err(e) = app.handle_printer_registration_input(c).await {
-                                app.error_message = Some(format!("Error: {}", e));
+                            if let Err(e) = app_guard.handle_printer_registration_input(c).await {
+                                app_guard.error_message = Some(format!("Error: {}", e));
                             }
                         }
                         KeyCode::Backspace => {
-                            if let Err(e) = app.handle_printer_registration_input('\x08').await {
-                                app.error_message = Some(format!("Error: {}", e));
+                            if let Err(e) = app_guard.handle_printer_registration_input('\x08').await {
+                                app_guard.error_message = Some(format!("Error: {}", e));
                             }
                         }
                         KeyCode::Enter => {
-                            if let Err(e) = app.handle_printer_registration_input('\n').await {
-                                app.error_message = Some(format!("Error: {}", e));
+                            if let Err(e) = app_guard.handle_printer_registration_input('\n').await {
+                                app_guard.error_message = Some(format!("Error: {}", e));
                             }
                         }
                         _ => {}
@@ -86,76 +93,80 @@ async fn run_app<B: ratatui::backend::Backend>(
                     match key.code {
                         KeyCode::Char('q') => return Ok(()),
                         KeyCode::Esc => return Ok(()),
-                        KeyCode::Up => app.previous_item(),
-                        KeyCode::Down => app.next_item(),
+                        KeyCode::Up => app_guard.previous_item(),
+                        KeyCode::Down => app_guard.next_item(),
                         KeyCode::Char('o') => {
-                            app.clear_error();
-                            app.start_toggle_confirm();
+                            app_guard.clear_error();
+                            app_guard.start_toggle_confirm();
                         }
                         KeyCode::Char('h') => {
-                            app.clear_error();
-                            app.start_harvest_confirm();
+                            app_guard.clear_error();
+                            app_guard.start_harvest_confirm();
                         }
                         KeyCode::Char('n') => {
-                            if app.is_confirming {
-                                app.cancel_toggle();
-                            } else if app.is_harvesting {
-                                app.cancel_harvest();
-                            } else if app.is_switching_network {
-                                app.cancel_network_switch();
+                            if app_guard.is_confirming {
+                                app_guard.cancel_toggle();
+                            } else if app_guard.is_harvesting {
+                                app_guard.cancel_harvest();
+                            } else if app_guard.is_switching_network {
+                                app_guard.cancel_network_switch();
                             } else {
-                                app.clear_error();
-                                app.start_network_switch();
+                                app_guard.clear_error();
+                                app_guard.start_network_switch();
                             }
                         }
-                        KeyCode::Char('1') if app.is_switching_network => {
-                            app.switch_to_network(1);
-                            if let Err(e) = app.update_network().await {
+                        KeyCode::Char('1') if app_guard.is_switching_network => {
+                            app_guard.switch_to_network(1);
+                            if let Err(e) = app_guard.update_network().await {
                                 eprintln!("Failed to update network: {}", e);
                             }
                         }
-                        KeyCode::Char('2') if app.is_switching_network => {
-                            app.switch_to_network(2);
-                            if let Err(e) = app.update_network().await {
+                        KeyCode::Char('2') if app_guard.is_switching_network => {
+                            app_guard.switch_to_network(2);
+                            if let Err(e) = app_guard.update_network().await {
                                 eprintln!("Failed to update network: {}", e);
                             }
                         }
-                        KeyCode::Char('3') if app.is_switching_network => {
-                            app.switch_to_network(3);
-                            if let Err(e) = app.update_network().await {
+                        KeyCode::Char('3') if app_guard.is_switching_network => {
+                            app_guard.switch_to_network(3);
+                            if let Err(e) = app_guard.update_network().await {
                                 eprintln!("Failed to update network: {}", e);
                             }
                         }
                         KeyCode::Char('y') => {
-                            if app.is_confirming {
-                                app.confirm_toggle().await?;
-                            } else if app.is_harvesting {
-                                app.clear_error();
-                                app.confirm_harvest();
+                            if app_guard.is_confirming {
+                                app_guard.confirm_toggle().await?;
+                            } else if app_guard.is_harvesting {
+                                app_guard.clear_error();
+                                app_guard.confirm_harvest();
                             }
                         }
                         //Start-Start Printing
                         KeyCode::Char('p') => {
-                            if let Err(e) = app.handle_model_selection(false).await {
-                                app.error_message = Some(format!("Error: {}", e));
+                            if let Err(e) = App::handle_model_selection(Arc::clone(&app_arc), false).await {
+                                let mut app_guard = app_arc.lock().await;
+                                app_guard.error_message = Some(format!("Error: {}", e));
                             }
                         }
                         KeyCode::Enter => {
-                            if let Err(e) = app.handle_model_selection(true).await {
-                                app.error_message = Some(format!("Error: {}", e));
+                            if let Err(e) = App::handle_model_selection(Arc::clone(&app_arc), true).await {
+                                let mut app_guard = app_arc.lock().await;
+                                app_guard.error_message = Some(format!("Error: {}", e));
                             }
                         }
                         //End
 
                         //Start-Stop Printing
                         KeyCode::Char('s') => {
-                            if let Err(e) = app.run_stop_script().await {
-                                app.error_message = Some(format!("Error: {}", e));
+                            if let Err(e) = App::run_stop_script(Arc::clone(&app_arc)).await {
+                                let mut app_guard = app_arc.lock().await;
+                                app_guard.error_message = Some(format!("Error: {}", e));
                             }
                         }
                         KeyCode::Char('e') => {
-                            if let Err(e) = app.run_stop_script().await {
-                                app.error_message = Some(format!("Error: {}", e));
+                            if let Err(e) = App::run_stop_script(Arc::clone(&app_arc)).await {
+                                let mut app_guard = app_arc.lock().await;
+                                app_guard.error_message = Some(format!("Error: {}", e));
                             }
                         }
                         _ => {}
