@@ -14,7 +14,6 @@ module eureka::eureka {
         mutate_print_job_status,
         mutate_print_job_start_time,
         get_print_job_status,
-        get_print_job_alias,
         get_print_job_fees,
         mutate_print_job_end_time,
         get_print_job_id,
@@ -183,7 +182,7 @@ module eureka::eureka {
         ctx: &mut TxContext,
     ) {
         // Check if the print job is already completed
-        assert!(!get_print_job_status_via_printer(printer), EPrinterBusy);
+        assert!(get_print_job_status_via_printer(printer), EPrinterBusy);
         
         // Update job status
         mutate_print_job_status_via_printer(printer);
@@ -234,32 +233,27 @@ module eureka::eureka {
     /// 
     /// Helper function to mutate the status of a print job
     fun mutate_print_job_status_via_printer(printer: &mut Printer) {
-        let alias: String = get_print_job_alias_via_printer(printer);
-        mutate_print_job_status(dof::borrow_mut(&mut printer.id, alias));
+        mutate_print_job_status(dof::borrow_mut(&mut printer.id, b"current_job"));
     }
 
     // Helper function to mutate the start time of a print job
     fun mutate_print_job_start_time_via_printer(printer: &mut Printer, clock: &clock::Clock) {
-        let alias: String = get_print_job_alias_via_printer(printer);
-        mutate_print_job_start_time(dof::borrow_mut(&mut printer.id, alias), clock);
+        mutate_print_job_start_time(dof::borrow_mut(&mut printer.id, b"current_job"), clock);
     }
 
     // Helper function to mutate the end time of a print job
     fun mutate_print_job_end_time_via_printer(printer: &mut Printer, clock: &clock::Clock) {
-        let alias: String = get_print_job_alias_via_printer(printer);
-        mutate_print_job_end_time(dof::borrow_mut(&mut printer.id, alias), clock);
+        mutate_print_job_end_time(dof::borrow_mut(&mut printer.id, b"current_job"), clock);
     }
 
     // Gets print job status via printer
     fun get_print_job_status_via_printer(printer: &Printer): bool {
-        let alias: String = get_print_job_alias_via_printer(printer);
-        get_print_job_status(dof::borrow(&printer.id, alias))
+        get_print_job_status(dof::borrow(&printer.id, b"current_job"))
     }
 
     // Transfers print job fees to printer pool
     fun withdraw_fees_via_printer(printer: &mut Printer) {
-        let alias: String = get_print_job_alias_via_printer(printer);
-        let fee = extract_print_job_fees(dof::borrow_mut(&mut printer.id, alias));
+        let fee = extract_print_job_fees(dof::borrow_mut(&mut printer.id, b"current_job"));
         add_fees(printer, fee);
     }
 
@@ -301,11 +295,6 @@ module eureka::eureka {
     // Gets print job ID via printer
     fun get_print_job_id_via_printer(printer: &Printer): ID {
         get_print_job_id(dof::borrow(&printer.id, b"current_job"))
-    }
-
-    // Gets print job alias via printer
-    fun get_print_job_alias_via_printer(printer: &Printer): String {
-        get_print_job_alias(dof::borrow(&printer.id, b"current_job"))
     }
 
     /// === Printer Getter Functions ======
