@@ -19,7 +19,7 @@ mod wallet;
 mod ui;
 mod transactions;
 
-use app::App;
+use app::{App, MessageType};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -89,19 +89,17 @@ async fn run_app<B: ratatui::backend::Backend>(
                         _ => {}
                     }
                 } else {
-                    // 在主畫面時，處理所有快捷鍵
+                    // 在主畫面時，處理所有按鍵
                     match key.code {
                         KeyCode::Char('q') => return Ok(()),
                         KeyCode::Esc => return Ok(()),
-                        KeyCode::Up => app_guard.previous_item(),
-                        KeyCode::Down => app_guard.next_item(),
-                        KeyCode::Char('o') => {
-                            app_guard.clear_error();
-                            app_guard.start_toggle_confirm();
-                        }
-                        KeyCode::Char('h') => {
-                            app_guard.clear_error();
-                            app_guard.start_harvest_confirm();
+                        // 二次確認相關的按鍵
+                        KeyCode::Char('y') => {
+                            if app_guard.is_confirming {
+                                app_guard.confirm_toggle().await?;
+                            } else if app_guard.is_harvesting {
+                                app_guard.confirm_harvest();
+                            }
                         }
                         KeyCode::Char('n') => {
                             if app_guard.is_confirming {
@@ -111,68 +109,73 @@ async fn run_app<B: ratatui::backend::Backend>(
                             } else if app_guard.is_switching_network {
                                 app_guard.cancel_network_switch();
                             } else {
-                                app_guard.clear_error();
                                 app_guard.start_network_switch();
                             }
                         }
-                        KeyCode::Char('1') if app_guard.is_switching_network => {
-                            app_guard.switch_to_network(1);
-                            if let Err(e) = app_guard.update_network().await {
-                                eprintln!("Failed to update network: {}", e);
+                        // 功能按鍵
+                        KeyCode::Char('o') => {
+                            if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
+                                app_guard.start_toggle_confirm();
                             }
                         }
-                        KeyCode::Char('2') if app_guard.is_switching_network => {
-                            app_guard.switch_to_network(2);
-                            if let Err(e) = app_guard.update_network().await {
-                                eprintln!("Failed to update network: {}", e);
+                        KeyCode::Char('h') => {
+                            if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
+                                app_guard.start_harvest_confirm();
                             }
                         }
-                        KeyCode::Char('3') if app_guard.is_switching_network => {
-                            app_guard.switch_to_network(3);
-                            if let Err(e) = app_guard.update_network().await {
-                                eprintln!("Failed to update network: {}", e);
-                            }
-                        }
-                        KeyCode::Char('y') => {
-                            if app_guard.is_confirming {
-                                app_guard.confirm_toggle().await?;
-                            } else if app_guard.is_harvesting {
-                                app_guard.clear_error();
-                                app_guard.confirm_harvest();
-                            }
-                        }
-                        //Start-Start Printing
                         KeyCode::Char('p') => {
-                            if let Err(e) = App::handle_model_selection(Arc::clone(&app_arc), false).await {
-                                let mut app_guard = app_arc.lock().await;
-                                app_guard.error_message = Some(format!("Error: {}", e));
+                            if !app_guard.is_online && !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
+                                App::handle_model_selection(Arc::clone(&app_arc), false).await?;
                             }
                         }
-                        KeyCode::Enter => {
-                            if let Err(e) = App::handle_model_selection(Arc::clone(&app_arc), true).await {
-                                let mut app_guard = app_arc.lock().await;
-                                app_guard.error_message = Some(format!("Error: {}", e));
-                            }
-                        }
-                        //End
-
-                        //Start-Stop Printing
                         KeyCode::Char('s') => {
-                            if let Err(e) = App::run_stop_script(Arc::clone(&app_arc)).await {
-                                let mut app_guard = app_arc.lock().await;
-                                app_guard.error_message = Some(format!("Error: {}", e));
+                            if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
+                                if let Err(e) = App::run_stop_script(Arc::clone(&app_arc)).await {
+                                    app_guard.set_message(MessageType::Error, format!("Failed to stop script: {}", e));
+                                }
                             }
                         }
                         KeyCode::Char('e') => {
-                            if let Err(e) = App::run_stop_script(Arc::clone(&app_arc)).await {
-                                let mut app_guard = app_arc.lock().await;
-                                app_guard.error_message = Some(format!("Error: {}", e));
+                            if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
+                                if let Err(e) = App::run_stop_script(Arc::clone(&app_arc)).await {
+                                    app_guard.set_message(MessageType::Error, format!("Failed to stop print: {}", e));
+                                }
                             }
                         }
-                        _ => {}
+                        KeyCode::Enter => {
+                            if !app_guard.is_online && !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
+                                App::handle_model_selection(Arc::clone(&app_arc), true).await?;
+                            }
+                        }
+                        // 網絡切換
+                        KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3') => {
+                            if app_guard.is_switching_network {
+                                let network_index = match key.code {
+                                    KeyCode::Char('1') => 2,  // MAINNET
+                                    KeyCode::Char('2') => 0,  // DEVNET
+                                    KeyCode::Char('3') => 1,  // TESTNET
+                                    _ => unreachable!(),
+                                };
+                                app_guard.switch_to_network(network_index);
+                                app_guard.update_network().await?;
+                            }
+                        }
+                        // 列表導航
+                        KeyCode::Up => {
+                            app_guard.previous_item();
+                        }
+                        KeyCode::Down => {
+                            app_guard.next_item();
+                        }
+                        _ => {
+                            // 清除任何消息
+                            app_guard.clear_error();
+                            app_guard.success_message = None;
+                        }
                     }
                 }
             }
         }
     }
 }
+

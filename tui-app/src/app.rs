@@ -82,6 +82,7 @@ pub struct App {
     pub bottega_items: Vec<BottegaItem>,
     pub script_status: ScriptStatus,
     pub print_status: PrintStatus,
+    pub success_message: Option<String>,
 }
 
 impl App {
@@ -134,6 +135,7 @@ impl App {
             bottega_items,
             script_status: ScriptStatus::Idle,
             print_status: PrintStatus::Idle,
+            success_message: None,
         };
         
         // Check if printer registration is needed
@@ -161,16 +163,13 @@ impl App {
             match self.wallet.get_user_bottega(self.wallet.get_active_address().await?).await {
                 Ok(items) => {
                     self.bottega_items = items;
-                    self.message_type = MessageType::Info;
-                    self.error_message = Some("Successfully loaded 3D models".to_string());
                     // 重置選擇狀態
                     if !self.bottega_items.is_empty() {
                         self.bottega_state.select(Some(0));
                     }
                 }
                 Err(e) => {
-                    self.message_type = MessageType::Error;
-                    self.error_message = Some(format!("Failed to load 3D models: {}", e));
+                    self.set_message(MessageType::Error, format!("Failed to load 3D models: {}", e));
                 }
             }
         }
@@ -188,6 +187,8 @@ impl App {
 
     pub fn confirm_harvest(&mut self) {
         self.is_harvesting = false;
+        // TODO: 實際執行 harvest 邏輯
+        self.success_message = Some("Harvest completed successfully!".to_string());
     }
 
     pub fn cancel_harvest(&mut self) {
@@ -335,6 +336,26 @@ impl App {
 
     pub fn clear_error(&mut self) {
         self.error_message = None;
+        self.success_message = None;
+    }
+
+    // 設置訊息的方法
+    pub fn set_message(&mut self, message_type: MessageType, message: String) {
+        self.message_type = message_type.clone();
+        match message_type {
+            MessageType::Error => {
+                self.error_message = Some(message);
+                self.success_message = None;
+            }
+            MessageType::Success => {
+                self.success_message = Some(message);
+                self.error_message = None;
+            }
+            MessageType::Info => {
+                self.error_message = Some(message);
+                self.success_message = None;
+            }
+        }
     }
 
     // printer registration
@@ -410,11 +431,11 @@ impl App {
             .await?;
 
         if !status.success() {
+            self.set_message(MessageType::Error, "Failed to download 3D model".to_string());
             return Err(anyhow::anyhow!("Failed to download 3D model"));
         }
 
-        self.message_type = MessageType::Info;
-        self.error_message = Some("3D model downloaded successfully".to_string());
+        self.set_message(MessageType::Success, "3D model downloaded successfully".to_string());
         Ok(())
     }
 
@@ -452,8 +473,7 @@ impl App {
         let mut app_guard = app.lock().await;
         app_guard.script_status = ScriptStatus::Running;
         app_guard.print_status = PrintStatus::Idle;
-        app_guard.message_type = MessageType::Info;
-        app_guard.error_message = Some("Starting print script...".to_string());
+        app_guard.set_message(MessageType::Info, "Starting print script...".to_string());
         drop(app_guard);
         
         let app_clone = Arc::clone(&app);
@@ -470,8 +490,7 @@ impl App {
                     if output.status.success() {
                         app.script_status = ScriptStatus::Completed;
                         app.print_status = PrintStatus::Printing(0);
-                        app.message_type = MessageType::Info;
-                        app.error_message = Some("Script completed, starting print...".to_string());
+                        app.set_message(MessageType::Info, "Script completed, starting print...".to_string());
                         drop(app);
                         let app_clone2 = Arc::clone(&app_clone);
                         tokio::spawn(async move {
@@ -484,23 +503,20 @@ impl App {
                             }
                             let mut app = app_clone2.lock().await;
                             app.print_status = PrintStatus::Completed;
-                            app.message_type = MessageType::Info;
-                            app.error_message = Some("Print completed successfully".to_string());
+                            app.set_message(MessageType::Success, "Print completed successfully".to_string());
                         });
                     } else {
                         app.script_status = ScriptStatus::Failed(
                             String::from_utf8_lossy(&output.stderr).to_string()
                         );
                         app.print_status = PrintStatus::Error("Script execution failed".to_string());
-                        app.message_type = MessageType::Error;
-                        app.error_message = Some("Script execution failed".to_string());
+                        app.set_message(MessageType::Error, "Script execution failed".to_string());
                     }
                 }
                 Err(e) => {
                     app.script_status = ScriptStatus::Failed(e.to_string());
                     app.print_status = PrintStatus::Error("Failed to execute script".to_string());
-                    app.message_type = MessageType::Error;
-                    app.error_message = Some("Failed to execute script".to_string());
+                    app.set_message(MessageType::Error, "Failed to execute script".to_string());
                 }
             }
         });
@@ -508,8 +524,7 @@ impl App {
 
     pub async fn run_stop_script(app: Arc<Mutex<App>>) -> Result<()> {
         let mut app_guard = app.lock().await;
-        app_guard.message_type = MessageType::Info;
-        app_guard.error_message = Some("Stopping print...".to_string());
+        app_guard.set_message(MessageType::Info, "Stopping print...".to_string());
         drop(app_guard);
 
         let app_clone = Arc::clone(&app);
@@ -524,23 +539,21 @@ impl App {
                         if !output.status.success() {
                             if let Ok(error) = String::from_utf8(output.stderr) {
                                 app.print_status = PrintStatus::Error(error.clone());
-                                app.message_type = MessageType::Error;
-                                app.error_message = Some(format!("Script failed: {}", error));
+                                app.set_message(MessageType::Error, format!("Script failed: {}", error));
                             } else {
                                 app.print_status = PrintStatus::Error("Script failed with non-utf8 error".to_string());
-                                app.message_type = MessageType::Error;
-                                app.error_message = Some("Script failed with non-utf8 error".to_string());
+                                app.set_message(MessageType::Error, "Script failed with non-utf8 error".to_string());
                             }
                         } else {
+                            // 重置狀態
+                            app.script_status = ScriptStatus::Idle;
                             app.print_status = PrintStatus::Idle;
-                            app.message_type = MessageType::Success;
-                            app.error_message = Some("Print stopped successfully".to_string());
+                            app.set_message(MessageType::Success, "Print stopped successfully".to_string());
                         }
                     }
                     Err(e) => {
                         app.print_status = PrintStatus::Error(e.to_string());
-                        app.message_type = MessageType::Error;
-                        app.error_message = Some(format!("Failed to execute script: {}", e));
+                        app.set_message(MessageType::Error, format!("Failed to execute script: {}", e));
                     }
                 }
         });

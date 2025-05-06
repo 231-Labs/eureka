@@ -176,7 +176,7 @@ fn draw_registration(f: &mut Frame, app: &mut App) {
         }
     };
 
-    // 如果有錯誤信息，添加到註冊信息中
+    // 顯示錯誤消息
     if let Some(error) = &app.error_message {
         registration_text.push(Line::from(""));
         registration_text.push(Line::from(vec![
@@ -607,10 +607,19 @@ fn draw_main(f: &mut Frame, app: &mut App) {
 
     // 錯誤訊息區域
     if let Some(error) = &app.error_message {
-        let (title, style) = match app.message_type {
-            MessageType::Error => ("ERROR", Style::default().fg(Color::Red)),
-            MessageType::Info => ("MESSAGE", Style::default().fg(Color::Green)),
-            MessageType::Success => ("SUCCESS", Style::default().fg(Color::Yellow)),
+        let (style, title) = match app.message_type {
+            MessageType::Error => (
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                "ERROR"
+            ),
+            MessageType::Info => (
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                "INFO"
+            ),
+            MessageType::Success => (
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                "SUCCESS"
+            ),
         };
 
         let message_block = Block::default()
@@ -619,12 +628,35 @@ fn draw_main(f: &mut Frame, app: &mut App) {
             .border_type(BorderType::Rounded)
             .border_style(style);
 
-        let message_text = Paragraph::new(error.clone())
-            .style(style)
-            .block(message_block)
-            .alignment(Alignment::Left);
+        let message_span = Span::styled(error, style);
+        f.render_widget(
+            Paragraph::new(message_span)
+                .block(message_block)
+                .alignment(Alignment::Center),
+            right_area[0],
+        );
+    }
 
-        f.render_widget(message_text, right_area[0]);
+    // 成功訊息區域
+    if let Some(success) = &app.success_message {
+        let message_block = Block::default()
+            .title("SUCCESS")
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(Color::Green));
+
+        let message_span = Span::styled(
+            success,
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        );
+        f.render_widget(
+            Paragraph::new(message_span)
+                .block(message_block)
+                .alignment(Alignment::Center),
+            right_area[0],
+        );
     }
 
     // 底部控制項
