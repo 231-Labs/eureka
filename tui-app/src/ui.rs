@@ -414,7 +414,6 @@ fn draw_main(f: &mut Frame, app: &mut App) {
     let left_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // 錢包地址
             Constraint::Length(3),  // 網絡狀態
             Constraint::Length(3),  // 代幣餘額
             Constraint::Length(3),  // 印表機 ID 和工資
@@ -423,18 +422,6 @@ fn draw_main(f: &mut Frame, app: &mut App) {
             Constraint::Min(0),     // 任務歷史或模型列表
         ])
         .split(content_layout[0]);
-
-    // 錢包地址顯示
-    let wallet_block = Block::default()
-        .title("WALLET ADDRESS")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(primary_color));
-    let wallet_text = Paragraph::new(app.wallet_address.clone())
-        .block(wallet_block)
-        .style(Style::default().fg(secondary_color))
-        .alignment(Alignment::Left);
-    f.render_widget(wallet_text, left_chunks[0]);
 
     // 網絡狀態顯示
     let network_block = Block::default()
@@ -455,10 +442,22 @@ fn draw_main(f: &mut Frame, app: &mut App) {
         .block(network_block)
         .style(Style::default().fg(if app.is_switching_network { Color::Yellow } else { secondary_color }))
         .alignment(Alignment::Left);
-    f.render_widget(network_paragraph, left_chunks[1]);
+    f.render_widget(network_paragraph, left_chunks[0]);
 
     // 代幣餘額顯示
-    let balance_chunks = Layout::default()
+    let printer_block = Block::default()
+        .title("PRINTER ID")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(primary_color));
+    let printer_text = Paragraph::new(app.printer_id.clone())
+        .block(printer_block)
+        .style(Style::default().fg(secondary_color))
+        .alignment(Alignment::Left);
+    f.render_widget(printer_text, left_chunks[1]);
+
+    // 印表機 ID 和工資顯示
+    let printer_reward_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Percentage(50),
@@ -476,40 +475,7 @@ fn draw_main(f: &mut Frame, app: &mut App) {
         .block(sui_block)
         .style(Style::default().fg(secondary_color))
         .alignment(Alignment::Left);
-    f.render_widget(sui_text, balance_chunks[0]);
-
-    // WAL 餘額顯示
-    let wal_block = Block::default()
-        .title("WAL BALANCE")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(primary_color));
-    let wal_text = Paragraph::new(format!("{:.2} WAL", app.wal_balance as f64 / 1_000_000_000.0))
-        .block(wal_block)
-        .style(Style::default().fg(secondary_color))
-        .alignment(Alignment::Left);
-    f.render_widget(wal_text, balance_chunks[1]);
-
-    // 印表機 ID 和工資顯示
-    let printer_reward_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
-        .split(left_chunks[3]);
-
-    // 印表機 ID
-    let printer_block = Block::default()
-        .title("PRINTER ID")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(primary_color));
-    let printer_text = Paragraph::new(app.printer_id.clone())
-        .block(printer_block)
-        .style(Style::default().fg(secondary_color))
-        .alignment(Alignment::Left);
-    f.render_widget(printer_text, printer_reward_chunks[0]);
+    f.render_widget(sui_text, printer_reward_chunks[0]);
 
     // 可收穫工資
     let reward_block = Block::default()
@@ -557,7 +523,7 @@ fn draw_main(f: &mut Frame, app: &mut App) {
     let status = Paragraph::new(status_text)
         .style(status_style)
         .block(status_block);
-    f.render_widget(status, left_chunks[4]);
+    f.render_widget(status, left_chunks[3]);
 
     // 添加科技動畫區塊
     let tech_block = Block::default()
@@ -571,7 +537,7 @@ fn draw_main(f: &mut Frame, app: &mut App) {
         .alignment(Alignment::Center)
         .block(tech_block);
     
-    f.render_widget(tech_text, left_chunks[5]);
+    f.render_widget(tech_text, left_chunks[4]);
 
     // 根據狀態顯示不同的列表
     if app.is_online {
@@ -598,7 +564,7 @@ fn draw_main(f: &mut Frame, app: &mut App) {
             .highlight_style(Style::default()
                 .add_modifier(Modifier::BOLD)
                 .fg(secondary_color));
-        f.render_stateful_widget(tasks_list, left_chunks[6], &mut app.tasks_state);
+        f.render_stateful_widget(tasks_list, left_chunks[5], &mut app.tasks_state);
     } else {
         // 離線狀態顯示 bottega 列表
         let bottega_items: Vec<ListItem> = app.bottega_items
@@ -618,7 +584,7 @@ fn draw_main(f: &mut Frame, app: &mut App) {
                 .add_modifier(Modifier::BOLD)
                 .fg(secondary_color))
             .highlight_symbol(">> ");
-        f.render_stateful_widget(bottega_list, left_chunks[6], &mut app.bottega_state);
+        f.render_stateful_widget(bottega_list, left_chunks[5], &mut app.bottega_state);
     }
 
     // 右側內容區

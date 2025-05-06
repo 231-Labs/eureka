@@ -9,6 +9,7 @@ use futures;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -418,12 +419,24 @@ impl App {
     }
 
     pub fn get_tech_animation(&self) -> String {
+        let time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let frame = (time % 3) as usize;
+
         // 只顯示一種狀態：優先顯示 print_status
         match &self.print_status {
             PrintStatus::Idle => {
                 // 沒有列印時才顯示 script_status
                 match self.script_status {
-                    ScriptStatus::Idle => "║▓▒░ SYS IDLE ░▒▓║".to_string(),
+                    ScriptStatus::Idle => {
+                        match frame {
+                            0 => "║▓▒░ SYS IDLE ░▒▓║".to_string(),
+                            1 => "║▒▓░ SYS IDLE ░▓▒║".to_string(),
+                            _ => "║░▓▒ SYS IDLE ▒▓░║".to_string(),
+                        }
+                    },
                     ScriptStatus::Running => "║▒▓░ SCRIPT RUNNING ░▓▒║".to_string(),
                     ScriptStatus::Completed => "║▓▒░ SCRIPT COMPLETE ░▒▓║".to_string(),
                     ScriptStatus::Failed(_) => "║▒▓░ SCRIPT ERROR ░▓▒║".to_string(),

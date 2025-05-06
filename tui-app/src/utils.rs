@@ -7,8 +7,8 @@ use crate::constants::{NETWORKS, NETWORK_PACKAGE_IDS, NetworkPackageIds};
 use dirs::home_dir;
 
 pub fn shorten_id(id: &str) -> String {
-    if id.len() > 10 {
-        format!("{}..{}", &id[..6], &id[id.len()-6..])
+    if id.len() > 16 {
+        format!("{}...{}", &id[..8], &id[id.len()-8..])
     } else {
         id.to_string()
     }
