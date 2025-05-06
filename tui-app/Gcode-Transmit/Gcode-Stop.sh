@@ -6,7 +6,7 @@ if [ -f ~/eureka/tui-app/Gcode-Transmit/Gcode-Send-PID.pid ]; then
     if ps -p $PID > /dev/null ; then
 
         kill $PID > /dev/null
-        echo "已成功終止列印!"
+        echo "Print job terminated successfully!"
         stty -F /dev/3Dprinter 115200
         if [ -e /dev/3Dprinter ]; then
 
@@ -17,11 +17,11 @@ if [ -f ~/eureka/tui-app/Gcode-Transmit/Gcode-Send-PID.pid ]; then
            echo "G1 Y220 F1500" > /dev/3Dprinter
 
         else
-            echo "Error: /dev/3Dprinter 無法訪問"
+            echo "Error: Unable to access /dev/3Dprinter"
         fi
-    else echo "PID 存在但已不在運行中"$PID
+    else echo "PID exists but process is not running: "$PID
 
     fi
 else
-    echo "PID 檔不存在，可能列印尚未啟動"
+    echo "PID file does not exist. Print job may not have started."
 fi

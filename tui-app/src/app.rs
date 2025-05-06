@@ -449,6 +449,12 @@ impl App {
         // 只顯示一種狀態：優先顯示 print_status
         match &self.print_status {
             PrintStatus::Idle => {
+                // 檢查是否在停止過程中
+                if matches!(self.message_type, MessageType::Info) && 
+                   self.error_message.as_ref().map_or(false, |msg| msg.contains("Stopping print")) {
+                    return "║▒▓░ STOPPING PRINT... ░▓▒║".to_string();
+                }
+
                 // 沒有列印時才顯示 script_status
                 match self.script_status {
                     ScriptStatus::Idle => {
@@ -522,49 +528,84 @@ impl App {
         });
     }
 
-    pub async fn run_stop_script(app: Arc<Mutex<App>>) -> Result<()> {
-        // 更新初始狀態
-        {
-            let mut app_guard = app.lock().await;
-            app_guard.set_message(MessageType::Info, "Stopping print...".to_string());
+    pub async fn run_stop_script(&mut self) -> Result<()> {
+        // 立即顯示停止狀態
+        self.set_message(MessageType::Info, "Stopping print...".to_string());
+        
+        // 使用 spawn 啟動命令，捕捉輸出以便顯示
+        let output = match tokio::process::Command::new("sh")
+            .current_dir("Gcode-Transmit")
+            .arg("Gcode-Stop.sh")
+            .output()
+            .await {
+                Ok(output) => output,
+                Err(e) => {
+                    self.script_status = ScriptStatus::Failed(e.to_string());
+                    self.print_status = PrintStatus::Error("Failed to execute stop script".to_string());
+                    self.set_message(MessageType::Error, format!("Failed to execute stop script: {}", e));
+                    return Ok(());
+                }
+            };
+
+        // 處理輸出
+        if output.status.success() {
+            // 從輸出中獲取訊息
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            // 重置狀態
+            self.script_status = ScriptStatus::Idle;
+            self.print_status = PrintStatus::Idle;
+            self.set_message(MessageType::Success, 
+                if stdout.is_empty() { "Print stopped successfully".to_string() } else { stdout }
+            );
+        } else {
+            // 處理錯誤
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let error_msg = if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                "Failed to stop print".to_string()
+            };
+            self.script_status = ScriptStatus::Failed(error_msg.clone());
+            self.print_status = PrintStatus::Error(error_msg.clone());
+            self.set_message(MessageType::Error, error_msg);
         }
-
-        let app_clone = Arc::clone(&app);
-        tokio::spawn(async move {
-            // 使用 spawn 啟動命令，但不等待其完成
-            let _ = tokio::process::Command::new("sh")
-                .current_dir("Gcode-Transmit")
-                .arg("Gcode-Stop.sh")
-                .spawn();
-
-            // 直接更新狀態，不等待命令完成
-            let mut app = app_clone.lock().await;
-            app.script_status = ScriptStatus::Idle;
-            app.print_status = PrintStatus::Idle;
-            app.set_message(MessageType::Success, "Stop command sent".to_string());
-        });
+        
         Ok(())
     }
 
     pub async fn handle_model_selection(app: Arc<Mutex<App>>, download_only: bool) -> Result<()> {
         let app_clone = Arc::clone(&app);
         tokio::spawn(async move {
-            let app_guard = app_clone.lock().await;
-            if let Some(selected) = app_guard.bottega_state.selected() {
-                if let Some(item) = app_guard.bottega_items.get(selected) {
-                    if item.alias != "No printable models found" {
-                        let blob_id = item.blob_id.clone();
-                        drop(app_guard);
-                        {
-                            let mut app = app_clone.lock().await;
-                            if let Err(e) = app.download_3d_model(&blob_id).await {
-                                app.error_message = Some(format!("下載模型失敗: {}", e));
-                                return;
-                            }
-                        }
-                        if !download_only {
-                            App::run_print_script(Arc::clone(&app_clone)).await;
-                        }
+            // 獲取選擇的模型
+            let selected_item = {
+                let app_guard = app_clone.lock().await;
+                app_guard.bottega_state
+                    .selected()
+                    .and_then(|idx| app_guard.bottega_items.get(idx).cloned())
+            };
+
+            // 處理選擇的模型
+            if let Some(item) = selected_item {
+                if item.alias != "No printable models found" {
+                    // 下載模型
+                    let download_result = {
+                        let mut app = app_clone.lock().await;
+                        app.download_3d_model(&item.blob_id).await
+                    };
+
+                    // 處理下載結果
+                    if let Err(e) = download_result {
+                        let mut app = app_clone.lock().await;
+                        app.set_message(MessageType::Error, format!("Failed to download model: {}", e));
+                        return;
+                    }
+
+                    // 執行列印腳本（如果不是只下載）
+                    if !download_only {
+                        App::run_print_script(Arc::clone(&app_clone)).await;
                     }
                 }
             }

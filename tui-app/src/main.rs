@@ -19,7 +19,7 @@ mod wallet;
 mod ui;
 mod transactions;
 
-use app::{App, MessageType, PrintStatus, ScriptStatus};
+use app::{App, MessageType};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -130,7 +130,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                         }
                         KeyCode::Char('e') => {
                             if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
-                                if let Err(e) = App::run_stop_script(Arc::clone(&app_arc)).await {
+                                if let Err(e) = app_guard.run_stop_script().await {
                                     app_guard.set_message(MessageType::Error, format!("Failed to stop print: {}", e));
                                 }
                             }
@@ -170,50 +170,5 @@ async fn run_app<B: ratatui::backend::Backend>(
             }
         }
     }
-}
-
-pub async fn run_stop_script(app: Arc<Mutex<App>>) -> Result<()> {
-    let mut app_guard = app.lock().await;
-    app_guard.set_message(MessageType::Info, "Stopping print...".to_string());
-    drop(app_guard);
-
-    let app_clone = Arc::clone(&app);
-    tokio::spawn(async move {
-        // 創建命令但不等待執行
-        let mut child = match tokio::process::Command::new("sh")
-            .current_dir("Gcode-Transmit")
-            .arg("Gcode-Stop.sh")
-            .spawn() {
-                Ok(child) => child,
-                Err(e) => {
-                    let mut app = app_clone.lock().await;
-                    app.print_status = PrintStatus::Error(e.to_string());
-                    app.set_message(MessageType::Error, format!("Failed to start script: {}", e));
-                    return;
-                }
-            };
-
-        // 等待命令完成
-        match child.wait().await {
-            Ok(status) => {
-                let mut app = app_clone.lock().await;
-                if status.success() {
-                    app.script_status = ScriptStatus::Idle;
-                    app.print_status = PrintStatus::Idle;
-                    app.set_message(MessageType::Success, "Print stopped successfully".to_string());
-                } else {
-                    app.print_status = PrintStatus::Error("Script execution failed".to_string());
-                    app.set_message(MessageType::Error, "Script execution failed".to_string());
-                }
-            }
-            Err(e) => {
-                let mut app = app_clone.lock().await;
-                app.print_status = PrintStatus::Error(e.to_string());
-                app.set_message(MessageType::Error, format!("Script execution error: {}", e));
-            }
-        }
-    });
-
-    Ok(())
 }
 
