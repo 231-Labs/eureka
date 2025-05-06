@@ -5,25 +5,41 @@ module eureka::eureka {
         event,
         table::{ Self, Table },
         balance::{ Self, Balance },
-        coin::{ Self },
-        sui::SUI 
+        coin::{ Self, Coin },
+        sui::SUI,
+        clock::{ Self },
+        dynamic_object_field as dof,
+    };
+    use eureka::print_job::{
+        mutate_print_job_status,
+        mutate_print_job_start_time,
+        get_print_job_status,
+        get_print_job_alias,
+        get_print_job_fees,
+        mutate_print_job_end_time,
+        get_print_job_id,
+        create_print_job,
+        extract_print_job_fees
     };
 
-    /// === Errors ===
+    /// === Errors ===============
     const ENotAuthorized: u64 = 1;
+    const EPrinterBusy: u64 = 2;
+    
 
-    /// === One Time Witness ===
+    /// === One Time Witness =======
     public struct EUREKA has drop {}
 
-    /// === Structs ===
-    
+
+    /// === Structs ===========================
+    ///
     /// Registry for all printers in the system
     public struct PrinterRegisty has key {
         id: UID,
         printers: Table<ID, address>,
     }
 
-    /// Represents a 3D printer with associated properties and balance
+    // Represents a 3D printer with associated properties and balance
     public struct Printer has key {
         id: UID,
         owner: address,
@@ -32,19 +48,34 @@ module eureka::eureka {
         pool: Balance<SUI>,
     }
 
-    /// Capability object that authorizes printer operations
+    // Capability object that authorizes printer operations
     public struct PrinterCap has key, store {
         id: UID,
         printer_id: ID,
     }
 
-    /// === Events ===
-    
+    /// === Events ===========================================
+    ///
     /// Emitted when a new printer is registered in the system
     public struct PrinterRegistered has copy, drop {
         printer_id: ID,
         owner: address,
         status: bool,
+    }
+
+    public struct PrintJobCreated has copy, drop {
+        job_id: ID,
+        printer_id: ID,
+        customer: address,
+        alias: String,
+        paid_amount: u64,
+    }
+
+    public struct PrintJobCompleted has copy, drop {
+        job_id: ID,
+        printer_id: ID,
+        customer: address,
+        paid_amount: u64,
     }
 
     /// Emitted when a printer's status is updated
@@ -53,8 +84,8 @@ module eureka::eureka {
         new_status: bool,
     }
 
-    /// === Initialization ===
-    
+    /// === Initialization ===================
+    ///
     /// Initializes the module with a registry
     fun init(otw: EUREKA, ctx: &mut TxContext) {
         let registry = PrinterRegisty {
@@ -66,8 +97,8 @@ module eureka::eureka {
         let EUREKA {} = otw;
     }
 
-    /// === Public Entry Functions ===
-    
+    /// === Public Entry Functions ============
+    ///
     /// Registers a new printer in the registry
     public entry fun register_printer(
         state: &mut PrinterRegisty,
@@ -102,7 +133,71 @@ module eureka::eureka {
         });
     }
 
-    /// Withdraws accumulated fees from a printer
+    // Creates a new print job and assigns it to a printer
+    public entry fun create_and_assign_print_job(
+        printer: &mut Printer,
+        alias: String,
+        payment: Coin<SUI>,
+        ctx: &mut TxContext,
+    ) {
+        let payment_value = coin::value(&payment);
+        let payment_balance = coin::into_balance(payment);
+        let job = create_print_job(
+            ctx.sender(),
+            alias,
+            payment_balance,
+            ctx,
+        );
+        // Add job to printer as dynamic field using alias as key
+        add_print_job_field(printer, alias, job);
+
+        event::emit(PrintJobCreated {
+            job_id: get_print_job_id_via_printer(printer),
+            printer_id: object::uid_to_inner(&printer.id),
+            customer: ctx.sender(),
+            alias,
+            paid_amount: payment_value,
+        });
+    }
+
+    // Starts a print job and updates the printer status
+    public entry fun start_print_job(
+        cap: &PrinterCap,
+        printer: &mut Printer,
+        clock: &clock::Clock,
+    ) {
+        mutate_print_job_status_via_printer(printer);
+        mutate_print_job_start_time_via_printer(printer, clock);
+        update_printer_status(cap, printer, false);
+    }
+
+    // Completes a print job and updates the printer status
+    public entry fun complete_print_job(
+        cap: &PrinterCap,
+        printer: &mut Printer,
+        clock: &clock::Clock,
+        ctx: &mut TxContext,
+    ) {
+        // Check if the print job is already completed
+        assert!(!get_print_job_status_via_printer(printer), EPrinterBusy);
+        
+        // Update job status
+        mutate_print_job_status_via_printer(printer);
+        
+        // Transfer fees to printer pool
+        withdraw_fees_via_printer(printer);
+        
+        // Record end time
+        mutate_print_job_end_time_via_printer(printer, clock);
+        
+        // Emit completion event
+        emit_print_job_completed_event(printer, ctx);
+        
+        // Update printer status to available
+        update_printer_status(cap, printer, true);
+    }
+
+    // Withdraws accumulated fees from a printer
     public entry fun withdraw_fees(
         cap: &PrinterCap,
         printer: &mut Printer,
@@ -114,10 +209,10 @@ module eureka::eureka {
         transfer::public_transfer(coin, tx_context::sender(ctx));
     }
 
-    /// === Status Management Functions ===
-    
+    /// === Status Management Functions =
+    ///
     /// Updates a printer's online status
-    public fun update_printer_status(
+    fun update_printer_status(
         cap: &PrinterCap,
         printer: &mut Printer,
         new_status: bool,
@@ -131,31 +226,59 @@ module eureka::eureka {
         });
     }
 
-    /// === Getter Functions ===
-    
-    /// Gets the ID of a printer
-    public fun get_printer_id(printer: &Printer): ID {
-        object::uid_to_inner(&printer.id)
+    /// ==== PrintJob Access Functions ====================
+    /// 
+    /// Helper function to mutate the status of a print job
+    fun mutate_print_job_status_via_printer(printer: &mut Printer) {
+        let alias: String = get_print_job_alias_via_printer(printer);
+        mutate_print_job_status(dof::borrow_mut(&mut printer.id, alias));
     }
 
-    /// Gets the online status of a printer
-    public fun get_printer_status(printer: &Printer): bool {
-        printer.online
+    // Helper function to mutate the start time of a print job
+    fun mutate_print_job_start_time_via_printer(printer: &mut Printer, clock: &clock::Clock) {
+        let alias: String = get_print_job_alias_via_printer(printer);
+        mutate_print_job_start_time(dof::borrow_mut(&mut printer.id, alias), clock);
     }
 
-    /// Gets the owner address of a printer
-    public fun get_printer_owner(printer: &Printer): address {
-        printer.owner
+    // Helper function to mutate the end time of a print job
+    fun mutate_print_job_end_time_via_printer(printer: &mut Printer, clock: &clock::Clock) {
+        let alias: String = get_print_job_alias_via_printer(printer);
+        mutate_print_job_end_time(dof::borrow_mut(&mut printer.id, alias), clock);
     }
 
-    /// === Package-only Functions ===
-    
-    /// Adds fees to the printer's pool
+    // Gets print job status via printer
+    fun get_print_job_status_via_printer(printer: &Printer): bool {
+        let alias: String = get_print_job_alias_via_printer(printer);
+        get_print_job_status(dof::borrow(&printer.id, alias))
+    }
+
+    // Transfers print job fees to printer pool
+    fun withdraw_fees_via_printer(printer: &mut Printer) {
+        let alias: String = get_print_job_alias_via_printer(printer);
+        let fee = extract_print_job_fees(dof::borrow_mut(&mut printer.id, alias));
+        add_fees(printer, fee);
+    }
+
+    /// ==== Event Functions =========== ///
+    /// 
+    /// Emits print job completion event ///
+    fun emit_print_job_completed_event(printer: &Printer, ctx: &TxContext) {
+        event::emit(PrintJobCompleted {
+            job_id: get_print_job_id_via_printer(printer),
+            printer_id: object::uid_to_inner(&printer.id),
+            customer: ctx.sender(),
+            paid_amount: get_print_job_fees_via_printer(printer),
+        });
+    }
+
+    /// ==== Helper Functions ========= ///
+    /// 
+    /// Adds fees to the printer's pool ///
     public(package) fun add_fees(printer: &mut Printer, payment: Balance<SUI>) {
         balance::join(&mut printer.pool, payment);
     }
     
-    /// Helper function to add a print job as a dynamic field
+    // Helper function to add a print job as a dynamic field
     public(package) fun add_print_job_field<K: copy + drop + store, V: key + store>(
         printer: &mut Printer,
         k: K,
@@ -163,6 +286,37 @@ module eureka::eureka {
     ) {
         sui::dynamic_object_field::add(&mut printer.id, k, v);
     }
+
+    /// === Print Job Getter Functions =======================
+    /// 
+    /// Gets fee amount from a print job via printer
+    fun get_print_job_fees_via_printer(printer: &Printer): u64 {
+        get_print_job_fees(dof::borrow(&printer.id, get_print_job_alias_via_printer(printer)))
+    }
+
+    // Gets print job ID via printer
+    fun get_print_job_id_via_printer(printer: &Printer): ID {
+        let alias: String = get_print_job_alias_via_printer(printer);
+        get_print_job_id(dof::borrow(&printer.id, alias))
+    }
+
+    // Gets print job alias via printer
+    fun get_print_job_alias_via_printer(printer: &Printer): String {
+        get_print_job_alias(dof::borrow(&printer.id, b"print_job"))
+    }
+
+    /// === Printer Getter Functions ======
+    ///
+    /// Gets the owner address of a printer
+    public fun get_printer_owner(printer: &Printer): address {
+        printer.owner
+    }
+
+    /// Gets the online status of a printer
+    public fun get_printer_status(printer: &Printer): bool {
+        printer.online
+    }
+    
 }
 
 
