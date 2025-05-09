@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# PID_File_Path="~/eureka/tui-app/Gcode-Transmit/main/Gcode-Send-PID.pid"
-PID_File_Path="./Gcode-Send-PID.pid"
+PID_File_Path="~/eureka/tui-app/Gcode-Transmit/main/Gcode-Send-PID.pid"
+# PID_File_Path="./Gcode-Send-PID.pid"
 USB_Device="/dev/3Dprinter"
 
 # 檢查 Printer 是否連接
