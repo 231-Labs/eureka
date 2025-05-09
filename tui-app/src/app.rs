@@ -6,10 +6,11 @@ use anyhow::Result;
 use crate::transactions::TransactionBuilder;
 use sui_sdk::types::base_types::ObjectID;
 use futures;
-use std::path::PathBuf;
+//use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::io::{BufReader, AsyncBufReadExt};
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -83,6 +84,7 @@ pub struct App {
     pub script_status: ScriptStatus,
     pub print_status: PrintStatus,
     pub success_message: Option<String>,
+    pub print_output: Vec<String>,  // 新增：存儲列印輸出
 }
 
 impl App {
@@ -136,6 +138,7 @@ impl App {
             script_status: ScriptStatus::Idle,
             print_status: PrintStatus::Idle,
             success_message: None,
+            print_output: Vec::new(),  // 初始化輸出列表
         };
         
         // Check if printer registration is needed
@@ -304,8 +307,6 @@ impl App {
         self.sui_balance = self.wallet.get_sui_balance(self.wallet.get_active_address().await?).await?;
         self.wal_balance = self.wallet.get_walrus_balance(self.wallet.get_active_address().await?).await?;
         self.printer_id = self.wallet.get_user_printer_id(self.wallet.get_active_address().await?).await?;
-        
-        // 更新 bottega 項目
         self.bottega_items = self.wallet.get_user_bottega(self.wallet.get_active_address().await?).await?;
         
         Ok(())
@@ -417,16 +418,17 @@ impl App {
     }
 
     pub async fn download_3d_model(&mut self, blob_id: &str) -> Result<()> {
-        let aggregator_url = AGGREGATOR_URL;
-        let output_path = PathBuf::from("Gcode-Transmit/test.stl");
+        let url = format!("{}/v1/blobs/{}", AGGREGATOR_URL, blob_id);
+        let temp_path = "test.stl";
+        let final_path = "Gcode-Transmit/test.stl";
         
-        // 使用 tokio::process::Command 非同步執行
+        // 先下載到臨時文件
         let status = tokio::process::Command::new("curl")
             .arg("-s")
             .arg("-S")
-            .arg(format!("{}/v1/blobs/{}", aggregator_url, blob_id))
+            .arg(&url)
             .arg("-o")
-            .arg(&output_path)
+            .arg(temp_path)
             .status()
             .await?;
 
@@ -435,8 +437,20 @@ impl App {
             return Err(anyhow::anyhow!("Failed to download 3D model"));
         }
 
-        self.set_message(MessageType::Success, "3D model downloaded successfully".to_string());
-        Ok(())
+        // 移動文件到目標目錄
+        let move_status = tokio::process::Command::new("mv")
+            .arg(temp_path)
+            .arg(final_path)
+            .status()
+            .await?;
+
+        if move_status.success() {
+            self.set_message(MessageType::Success, "3D model downloaded successfully".to_string());
+            Ok(())
+        } else {
+            self.set_message(MessageType::Error, "Failed to move 3D model to target directory".to_string());
+            Err(anyhow::anyhow!("Failed to move 3D model to target directory"))
+        }
     }
 
     pub fn get_tech_animation(&self) -> String {
@@ -475,55 +489,106 @@ impl App {
         }
     }
 
+    pub fn clear_print_output(&mut self) {
+        self.print_output.clear();
+    }
+
     pub async fn run_print_script(app: Arc<Mutex<App>>) {
-        let mut app_guard = app.lock().await;
-        app_guard.script_status = ScriptStatus::Running;
-        app_guard.print_status = PrintStatus::Idle;
-        app_guard.set_message(MessageType::Info, "Starting print script...".to_string());
-        drop(app_guard);
+        // 初始化狀態
+        {
+            let mut app_guard = app.lock().await;
+            app_guard.script_status = ScriptStatus::Running;
+            app_guard.print_status = PrintStatus::Idle;
+            app_guard.clear_print_output();
+            app_guard.set_message(MessageType::Info, "Starting print script...".to_string());
+        }
         
         let app_clone = Arc::clone(&app);
         tokio::spawn(async move {
-            let mut app = app_clone.lock().await;
-            let script_result = tokio::process::Command::new("sh")
+            // 執行列印腳本
+            let mut child = match tokio::process::Command::new("sh")
                 .current_dir("Gcode-Transmit")
-                .arg("Gcode-Send.sh")
-                .output()
-                .await;
+                .arg("Gcode-Process.sh")
+                .arg("--print")
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn() {
+                    Ok(child) => child,
+                    Err(e) => {
+                        let mut app = app_clone.lock().await;
+                        app.script_status = ScriptStatus::Failed(e.to_string());
+                        app.print_status = PrintStatus::Error("Failed to start script".to_string());
+                        app.set_message(MessageType::Error, format!("Failed to start script: {}", e));
+                        return;
+                    }
+                };
 
-            match script_result {
-                Ok(output) => {
-                    if output.status.success() {
-                        app.script_status = ScriptStatus::Completed;
-                        app.print_status = PrintStatus::Printing(0);
-                        app.set_message(MessageType::Info, "Script completed, starting print...".to_string());
-                        drop(app);
-                        let app_clone2 = Arc::clone(&app_clone);
-                        tokio::spawn(async move {
-                            let mut progress = 0;
-                            while progress < 100 {
-                                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                                progress += 10;
-                                let mut app = app_clone2.lock().await;
-                                app.print_status = PrintStatus::Printing(progress);
-                            }
-                            let mut app = app_clone2.lock().await;
-                            app.print_status = PrintStatus::Completed;
-                            app.set_message(MessageType::Success, "Print completed successfully".to_string());
-                        });
-                    } else {
-                        app.script_status = ScriptStatus::Failed(
-                            String::from_utf8_lossy(&output.stderr).to_string()
-                        );
-                        app.print_status = PrintStatus::Error("Script execution failed".to_string());
-                        app.set_message(MessageType::Error, "Script execution failed".to_string());
+            // 設置輸出處理
+            let stdout = child.stdout.take().unwrap();
+            let stderr = child.stderr.take().unwrap();
+            let app_clone_stdout = Arc::clone(&app_clone);
+            let app_clone_stderr = Arc::clone(&app_clone);
+
+            // 處理標準輸出
+            let stdout_handle = tokio::spawn(async move {
+                let mut reader = BufReader::new(stdout).lines();
+                let mut slicing_completed = false;
+                while let Ok(Some(line)) = reader.next_line().await {
+                    let mut app = app_clone_stdout.lock().await;
+                    app.print_output.push(line.clone());
+                    if app.print_output.len() > 1000 {
+                        app.print_output.remove(0);
+                    }
+                    // 檢測切片完成
+                    if line.contains("Slicing completed") {
+                        slicing_completed = true;
+                        app.set_message(MessageType::Info, "Slicing completed, starting print...".to_string());
                     }
                 }
-                Err(e) => {
-                    app.script_status = ScriptStatus::Failed(e.to_string());
-                    app.print_status = PrintStatus::Error("Failed to execute script".to_string());
-                    app.set_message(MessageType::Error, "Failed to execute script".to_string());
+                // 如果切片完成但腳本失敗，可能是打印機連接問題
+                if slicing_completed {
+                    let mut app = app_clone_stdout.lock().await;
+                    app.set_message(MessageType::Error, "Slicing completed but failed to connect to printer. Please check printer connection.".to_string());
                 }
+            });
+
+            // 處理錯誤輸出
+            let stderr_handle = tokio::spawn(async move {
+                let mut reader = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    let mut app = app_clone_stderr.lock().await;
+                    app.print_output.push(format!("ERROR: {}", line));
+                    if app.print_output.len() > 1000 {
+                        app.print_output.remove(0);
+                    }
+                }
+            });
+
+            // 等待腳本完成，不設置超時
+            let status = match child.wait().await {
+                Ok(status) => status,
+                Err(e) => {
+                    let mut app = app_clone.lock().await;
+                    app.script_status = ScriptStatus::Failed(e.to_string());
+                    app.print_status = PrintStatus::Error("Script execution failed".to_string());
+                    app.set_message(MessageType::Error, format!("Script execution failed: {}", e));
+                    return;
+                }
+            };
+
+            // 等待輸出處理完成
+            let _ = tokio::join!(stdout_handle, stderr_handle);
+
+            // 更新最終狀態
+            let mut app = app_clone.lock().await;
+            if status.success() {
+                app.script_status = ScriptStatus::Completed;
+                app.print_status = PrintStatus::Completed;
+                app.set_message(MessageType::Success, "Print completed successfully".to_string());
+            } else {
+                app.script_status = ScriptStatus::Failed("Script execution failed".to_string());
+                app.print_status = PrintStatus::Error("Script execution failed".to_string());
+                // 不設置額外的錯誤消息，因為 stdout_handle 可能已經設置了更具體的錯誤信息
             }
         });
     }
@@ -535,7 +600,8 @@ impl App {
         // 使用 spawn 啟動命令，捕捉輸出以便顯示
         let output = match tokio::process::Command::new("sh")
             .current_dir("Gcode-Transmit")
-            .arg("Gcode-Stop.sh")
+            .arg("Gcode-Process.sh")
+            .arg("--stop")
             .output()
             .await {
                 Ok(output) => output,

@@ -8,6 +8,7 @@ use ratatui::{
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::app::{App, RegistrationStatus, MessageType};
 use crate::constants::{EUREKA_FRAMES, BUILD_ON_SUI};
+use textwrap;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     if app.is_registering_printer {
@@ -625,12 +626,29 @@ fn draw_main(f: &mut Frame, app: &mut App) {
             .border_type(BorderType::Rounded)
             .border_style(style);
 
-        let message_span = Span::styled(error, style);
+        // 計算可用寬度（減去邊框和邊距）
+        let available_width = right_area[0].width.saturating_sub(4);
+        
+        // 將錯誤訊息按可用寬度換行
+        let wrapped_text = textwrap::wrap(error, available_width as usize)
+            .into_iter()
+            .map(|line| Line::from(Span::styled(line, style)))
+            .collect::<Vec<_>>();
+
+        // 根據換行後的內容調整高度
+        let message_height = wrapped_text.len() as u16;
+        let message_area = Rect::new(
+            right_area[0].x,
+            right_area[0].y,
+            right_area[0].width,
+            message_height + 2, // 加上邊框的高度
+        );
+
         f.render_widget(
-            Paragraph::new(message_span)
+            Paragraph::new(wrapped_text)
                 .block(message_block)
-                .alignment(Alignment::Center),
-            right_area[0],
+                .alignment(Alignment::Left),
+            message_area,
         );
     }
 
@@ -642,17 +660,34 @@ fn draw_main(f: &mut Frame, app: &mut App) {
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(Color::Green));
 
-        let message_span = Span::styled(
-            success,
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
+        // 計算可用寬度（減去邊框和邊距）
+        let available_width = right_area[0].width.saturating_sub(4);
+        
+        // 將成功訊息按可用寬度換行
+        let wrapped_text = textwrap::wrap(success, available_width as usize)
+            .into_iter()
+            .map(|line| Line::from(Span::styled(
+                line,
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            )))
+            .collect::<Vec<_>>();
+
+        // 根據換行後的內容調整高度
+        let message_height = wrapped_text.len() as u16;
+        let message_area = Rect::new(
+            right_area[0].x,
+            right_area[0].y,
+            right_area[0].width,
+            message_height + 2, // 加上邊框的高度
         );
+
         f.render_widget(
-            Paragraph::new(message_span)
+            Paragraph::new(wrapped_text)
                 .block(message_block)
-                .alignment(Alignment::Center),
-            right_area[0],
+                .alignment(Alignment::Left),
+            message_area,
         );
     }
 
