@@ -4,12 +4,14 @@ module eureka::print_job {
     use std::string::{ String };
     use sui::{ balance::{ Self, Balance }, clock::{ Self } };
 
-    /// === Structs =================================================
-    /// 
+    /// === Structs ===
+ 
     /// Represents a print job with associated properties and balance
     public struct PrintJob has key, store {
         id: UID,
-        alias: String,
+        sculpt_alias: String,
+        sculpt_id: ID,
+        sculpt_structure: String,
         customer: address,
         printer_id: ID,
         is_completed: bool,
@@ -18,19 +20,23 @@ module eureka::print_job {
         end_time: Option<u64>,
     }    
 
-    /// === Mutator Functions =
-    /// 
+    /// === Mutator Functions ===
+    
     /// Creates a new print job
     public(package) fun create_print_job(
         customer: address,
-        alias: String,
+        sculpt_alias: String,
+        sculpt_id: ID,
+        sculpt_structure: String,
         paid_amount: Balance<SUI>,
         printer_id: ID,
         ctx: &mut TxContext,
     ): PrintJob {
         let job = PrintJob {
             id: object::new(ctx),
-            alias,
+            sculpt_alias,
+            sculpt_id,
+            sculpt_structure,
             customer,
             printer_id,
             is_completed: false,
@@ -67,8 +73,8 @@ module eureka::print_job {
         balance::split(&mut print_job.paid_amount, amount)
     }
 
-        /// === Getter Functions =====
-    /// 
+    /// === Getter Functions ===
+    
     /// Gets the ID of a print job
     public(package) fun get_print_job_id(print_job: &PrintJob): ID {
         object::uid_to_inner(&print_job.id)
@@ -90,8 +96,8 @@ module eureka::print_job {
         option::borrow(&print_job.end_time)
     }
 
-    public(package) fun get_print_job_alias(print_job: &PrintJob): String {
-        print_job.alias
+    public(package) fun get_print_job_sculpt_alias(print_job: &PrintJob): String {
+        print_job.sculpt_alias
     }
 
     public(package) fun get_print_job_customer(print_job: &PrintJob): address {
