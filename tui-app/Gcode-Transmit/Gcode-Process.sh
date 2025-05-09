@@ -4,12 +4,13 @@ Options_control="$1"
 
 if [ "$Options_control" == "--print" ]; then
 
-  /home/ubuntu/eureka/tui-app/Gcode-Transmit/main/Gcode-Send.sh
+  /home/ubuntu/eureka/tui-app/Gcode-Transmit/main/Gcode-Send.sh &
+  echo $? > /home/ubuntu/eureka/tui-app/Gcode-Transmit/Gcode-Send-Status
 
 elif [ "$Options_control" == "--stop" ]; then
 
   /home/ubuntu/eureka/tui-app/Gcode-Transmit/main/Gcode-Stop.sh
-
+  echo $? > /home/ubuntu/eureka/tui-app/Gcode-Transmit/Gcode-Stop-Status
 elif [ "$Options_control" == "--help" ]; then
 
   echo "用法：Gcode-Process.sh [選項]"
