@@ -11,6 +11,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::{BufReader, AsyncBufReadExt};
+use std::fs;
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -52,7 +53,7 @@ pub enum ScriptStatus {
 #[derive(Debug, Clone, PartialEq)]
 pub enum PrintStatus {
     Idle,
-    Printing(u8),  // Progress percentage
+    // Printing(u8),  // Progress percentage
     Completed,
     // Paused,
     Error(String),
@@ -438,19 +439,12 @@ impl App {
         }
 
         // 移動文件到目標目錄
-        let move_status = tokio::process::Command::new("mv")
-            .arg(temp_path)
-            .arg(final_path)
-            .status()
-            .await?;
-
-        if move_status.success() {
-            self.set_message(MessageType::Success, "3D model downloaded successfully".to_string());
-            Ok(())
-        } else {
-            self.set_message(MessageType::Error, "Failed to move 3D model to target directory".to_string());
-            Err(anyhow::anyhow!("Failed to move 3D model to target directory"))
+        if let Err(e) = fs::rename(temp_path, final_path) {
+            self.set_message(MessageType::Error, format!("Failed to move 3D model: {}", e));
+            return Err(anyhow::anyhow!("Failed to move 3D model: {}", e));
         }
+        self.set_message(MessageType::Success, "3D model downloaded successfully".to_string());
+        Ok(())
     }
 
     pub fn get_tech_animation(&self) -> String {
@@ -483,7 +477,7 @@ impl App {
                     ScriptStatus::Failed(_) => "║▒▓░ SCRIPT ERROR ░▓▒║".to_string(),
                 }
             }
-            PrintStatus::Printing(progress) => format!("║▒▓░ PRINTING {}% ░▓▒║", progress),
+            // PrintStatus::Printing(progress) => format!("║▒▓░ PRINTING {}% ░▓▒║", progress),
             PrintStatus::Completed => "║▓▒░ PRINT COMPLETE ░▒▓║".to_string(),
             PrintStatus::Error(_) => "║▒▓░ PRINTER ERROR ░▓▒║".to_string(),
         }
@@ -532,23 +526,12 @@ impl App {
             // 處理標準輸出
             let stdout_handle = tokio::spawn(async move {
                 let mut reader = BufReader::new(stdout).lines();
-                let mut slicing_completed = false;
                 while let Ok(Some(line)) = reader.next_line().await {
                     let mut app = app_clone_stdout.lock().await;
                     app.print_output.push(line.clone());
                     if app.print_output.len() > 1000 {
                         app.print_output.remove(0);
                     }
-                    // 檢測切片完成
-                    if line.contains("Slicing completed") {
-                        slicing_completed = true;
-                        app.set_message(MessageType::Info, "Slicing completed, starting print...".to_string());
-                    }
-                }
-                // 如果切片完成但腳本失敗，可能是打印機連接問題
-                if slicing_completed {
-                    let mut app = app_clone_stdout.lock().await;
-                    app.set_message(MessageType::Error, "Slicing completed but failed to connect to printer. Please check printer connection.".to_string());
                 }
             });
 
@@ -579,7 +562,7 @@ impl App {
             // 等待輸出處理完成
             let _ = tokio::join!(stdout_handle, stderr_handle);
 
-            // 更新最終狀態
+            // 更新最終狀態，只在這裡 set_message
             let mut app = app_clone.lock().await;
             if status.success() {
                 app.script_status = ScriptStatus::Completed;
@@ -588,8 +571,10 @@ impl App {
             } else {
                 app.script_status = ScriptStatus::Failed("Script execution failed".to_string());
                 app.print_status = PrintStatus::Error("Script execution failed".to_string());
-                // 不設置額外的錯誤消息，因為 stdout_handle 可能已經設置了更具體的錯誤信息
+                app.set_message(MessageType::Error, "Script execution failed".to_string());
             }
+
+            // println!("[DEBUG] script finished, status: {:?}", status);
         });
     }
 

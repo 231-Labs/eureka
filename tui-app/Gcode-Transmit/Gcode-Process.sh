@@ -4,11 +4,17 @@ Options_control="$1"
 
 if [ "$Options_control" == "--print" ]; then
 
-  /home/ubuntu/eureka/tui-app/Gcode-Transmit/main/Gcode-Send.sh
+  USB_Device="/dev/3Dprinter"
+  if [ ! -e "$USB_Device" ]; then
+    echo "Printer not connected!"
+    exit 1
+  fi
+  # /home/ubuntu/eureka/tui-app/Gcode-Transmit/main/Gcode-Send.sh
+  ./main/Gcode-Send.sh
 
 elif [ "$Options_control" == "--stop" ]; then
-
-  /home/ubuntu/eureka/tui-app/Gcode-Transmit/main/Gcode-Stop.sh
+  # /home/ubuntu/eureka/tui-app/Gcode-Transmit/main/Gcode-Stop.sh
+  ./main/Gcode-Stop.sh
 
 elif [ "$Options_control" == "--help" ]; then
 
