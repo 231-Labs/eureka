@@ -510,8 +510,8 @@ impl App {
                     Ok(child) => child,
                     Err(e) => {
                         let mut app = app_clone.lock().await;
-                        app.script_status = ScriptStatus::Failed(e.to_string());
-                        app.print_status = PrintStatus::Error("Failed to start script".to_string());
+                        app.script_status = ScriptStatus::Failed(format!("Failed to start script: {}", e));
+                        app.print_status = PrintStatus::Error(format!("Failed to start script: {}", e));
                         app.set_message(MessageType::Error, format!("Failed to start script: {}", e));
                         return;
                     }
@@ -552,8 +552,8 @@ impl App {
                 Ok(status) => status,
                 Err(e) => {
                     let mut app = app_clone.lock().await;
-                    app.script_status = ScriptStatus::Failed(e.to_string());
-                    app.print_status = PrintStatus::Error("Script execution failed".to_string());
+                    app.script_status = ScriptStatus::Failed(format!("Script execution failed: {}", e));
+                    app.print_status = PrintStatus::Error(format!("Script execution failed: {}", e));
                     app.set_message(MessageType::Error, format!("Script execution failed: {}", e));
                     return;
                 }
@@ -569,9 +569,16 @@ impl App {
                 app.print_status = PrintStatus::Completed;
                 app.set_message(MessageType::Success, "Print completed successfully".to_string());
             } else {
-                app.script_status = ScriptStatus::Failed("Script execution failed".to_string());
-                app.print_status = PrintStatus::Error("Script execution failed".to_string());
-                app.set_message(MessageType::Error, "Script execution failed".to_string());
+                let error_code = status.code().unwrap_or(-1);
+                let error_msg = match error_code {
+                    1 => "Printer not connected",
+                    2 => "Slicing process failed",
+                    3 => "Serial communication failed",
+                    _ => "Unknown error",
+                };
+                app.script_status = ScriptStatus::Failed(format!("Script execution failed (Error code: {}): {}", error_code, error_msg));
+                app.print_status = PrintStatus::Error(format!("Script execution failed (Error code: {}): {}", error_code, error_msg));
+                app.set_message(MessageType::Error, format!("Script execution failed (Error code: {}): {}", error_code, error_msg));
             }
 
             // println!("[DEBUG] script finished, status: {:?}", status);
