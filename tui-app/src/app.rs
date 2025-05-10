@@ -6,7 +6,6 @@ use anyhow::Result;
 use crate::transactions::TransactionBuilder;
 use sui_sdk::types::base_types::ObjectID;
 use futures;
-//use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -493,102 +492,30 @@ impl App {
             app_guard.script_status = ScriptStatus::Running;
             app_guard.print_status = PrintStatus::Idle;
             app_guard.clear_print_output();
-            app_guard.set_message(MessageType::Info, "Starting print script...".to_string());
-            app_guard.print_output.push("[LOG] 進入 run_print_script 函數".to_string());
-            
-            // 打印當前工作目錄
-            if let Ok(current_dir) = std::env::current_dir() {
-                app_guard.print_output.push(format!("[LOG] 當前工作目錄: {:?}", current_dir));
-            } else {
-                app_guard.print_output.push("[ERROR] 無法獲取當前工作目錄".to_string());
-            }
-            
-            // 檢查 Gcode-Process.sh 是否存在及權限
-            let script_path = "Gcode-Transmit/Gcode-Process.sh";
-            if std::path::Path::new(script_path).exists() {
-                // 檢查執行權限
-                let metadata = std::fs::metadata(script_path);
-                match metadata {
-                    Ok(meta) => {
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            let mode = meta.permissions().mode();
-                            app_guard.print_output.push(format!("[LOG] 腳本 {} 存在，模式: {:o}", script_path, mode));
-                        }
-                        #[cfg(not(unix))]
-                        {
-                            app_guard.print_output.push(format!("[LOG] 腳本 {} 存在", script_path));
-                        }
-                    },
-                    Err(e) => {
-                        app_guard.print_output.push(format!("[ERROR] 無法獲取腳本 {} 的元數據: {}", script_path, e));
-                    }
-                }
-            } else {
-                app_guard.print_output.push(format!("[ERROR] 腳本 {} 不存在", script_path));
-            }
-            
-            // 檢查 3D 印表機設備是否存在
-            let printer_dev = "/dev/3Dprinter";
-            if std::path::Path::new(printer_dev).exists() {
-                app_guard.print_output.push(format!("[LOG] 3D 印表機設備 {} 存在", printer_dev));
-            } else {
-                app_guard.print_output.push(format!("[ERROR] 3D 印表機設備 {} 不存在", printer_dev));
-            }
-            
-            // 檢查環境變數
-            app_guard.print_output.push("[LOG] 環境變數:".to_string());
-            for (key, value) in std::env::vars() {
-                if key == "PATH" || key == "LD_LIBRARY_PATH" || key == "HOME" || key == "USER" || key == "SHELL" {
-                    app_guard.print_output.push(format!("[LOG] ENV: {}={}", key, value));
-                }
-            }
+            app_guard.set_message(MessageType::Info, "Printing...".to_string());
         }
         
-        // 使用 channel 等待腳本完成
+        // Use channel to wait for script completion
         let (tx, mut rx) = tokio::sync::mpsc::channel::<bool>(1);
         let app_clone = Arc::clone(&app);
         
-        // 在執行腳本前檢查 Gcode-Transmit 目錄是否存在
+        // Check if Gcode-Transmit directory exists before executing script
         {
-            let mut app_locked = app_clone.lock().await;
-            app_locked.print_output.push("[LOG] 檢查 Gcode-Transmit 目錄".to_string());
             let transmit_dir = std::path::Path::new("Gcode-Transmit");
-            if transmit_dir.exists() && transmit_dir.is_dir() {
-                app_locked.print_output.push("[LOG] Gcode-Transmit 目錄存在".to_string());
-                
-                // 列出 Gcode-Transmit 目錄下的文件
-                if let Ok(entries) = std::fs::read_dir(transmit_dir) {
-                    app_locked.print_output.push("[LOG] Gcode-Transmit 目錄內容:".to_string());
-                    for entry in entries {
-                        if let Ok(entry) = entry {
-                            app_locked.print_output.push(format!("[LOG] - {:?}", entry.path()));
-                        }
-                    }
-                }
-            } else {
-                app_locked.print_output.push("[ERROR] Gcode-Transmit 目錄不存在".to_string());
+            if !transmit_dir.exists() || !transmit_dir.is_dir() {
+                let mut app_locked = app_clone.lock().await;
+                app_locked.print_output.push("[ERROR] Gcode-Transmit directory does not exist".to_string());
                 return false;
             }
         }
         
         tokio::spawn(async move {
-            // 執行列印腳本
-            let mut app_locked = app_clone.lock().await;
-            app_locked.print_output.push("[LOG] 準備呼叫 Gcode-Process.sh".to_string());
-            drop(app_locked);
-            
-            // 直接使用絕對路徑
+            // Use absolute path
             let current_dir = std::env::current_dir().unwrap_or_default();
             let script_path = current_dir.join("Gcode-Transmit").join("Gcode-Process.sh");
             let script_path_str = script_path.to_string_lossy();
             
             let command = format!("{} --print", script_path_str);
-            
-            let mut app_locked = app_clone.lock().await;
-            app_locked.print_output.push(format!("[LOG] 執行命令: sh -c \"{}\"", command));
-            drop(app_locked);
             
             let mut child = match tokio::process::Command::new("sh")
                 .arg("-c")
@@ -596,30 +523,24 @@ impl App {
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
                 .spawn() {
-                    Ok(child) => {
-                        let mut app_locked = app_clone.lock().await;
-                        app_locked.print_output.push("[LOG] 成功啟動 Gcode-Process.sh".to_string());
-                        drop(app_locked);
-                        child
-                    },
+                    Ok(child) => child,
                     Err(e) => {
                         let mut app = app_clone.lock().await;
                         app.script_status = ScriptStatus::Failed(format!("Failed to start script: {}", e));
                         app.print_status = PrintStatus::Error(format!("Failed to start script: {}", e));
                         app.set_message(MessageType::Error, format!("Failed to start script: {}", e));
-                        app.print_output.push(format!("[ERROR] 無法啟動腳本: {}", e));
                         let _ = tx.send(false).await;
                         return;
                     }
                 };
 
-            // 設置輸出處理
+            // Set up output handling
             let stdout = child.stdout.take().unwrap();
             let stderr = child.stderr.take().unwrap();
             let app_clone_stdout = Arc::clone(&app_clone);
             let app_clone_stderr = Arc::clone(&app_clone);
 
-            // 處理標準輸出
+            // Handle standard output
             let stdout_handle = tokio::spawn(async move {
                 let mut reader = BufReader::new(stdout).lines();
                 while let Ok(Some(line)) = reader.next_line().await {
@@ -631,7 +552,7 @@ impl App {
                 }
             });
 
-            // 處理錯誤輸出
+            // Handle error output
             let stderr_handle = tokio::spawn(async move {
                 let mut reader = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = reader.next_line().await {
@@ -643,35 +564,28 @@ impl App {
                 }
             });
 
-            // 等待腳本完成，不設置超時
+            // Wait for script completion
             let status = match child.wait().await {
-                Ok(status) => {
-                    let mut app_locked = app_clone.lock().await;
-                    app_locked.print_output.push(format!("[LOG] 腳本結束，exit code: {:?}", status.code()));
-                    drop(app_locked);
-                    status
-                },
+                Ok(status) => status,
                 Err(e) => {
                     let mut app = app_clone.lock().await;
                     app.script_status = ScriptStatus::Failed(format!("Script execution failed: {}", e));
                     app.print_status = PrintStatus::Error(format!("Script execution failed: {}", e));
                     app.set_message(MessageType::Error, format!("Script execution failed: {}", e));
-                    app.print_output.push(format!("[ERROR] 腳本 wait 失敗: {}", e));
                     let _ = tx.send(false).await;
                     return;
                 }
             };
 
-            // 等待輸出處理完成
+            // Wait for output handling to complete
             let _ = tokio::join!(stdout_handle, stderr_handle);
 
-            // 更新最終狀態，只在這裡 set_message
+            // Update final status
             let mut app = app_clone.lock().await;
             if status.success() {
                 app.script_status = ScriptStatus::Completed;
                 app.print_status = PrintStatus::Completed;
                 app.set_message(MessageType::Success, "Print completed successfully".to_string());
-                app.print_output.push("[LOG] 腳本執行成功，狀態已設為 Completed".to_string());
                 let _ = tx.send(true).await;
             } else {
                 let error_code = status.code().unwrap_or(-1);
@@ -684,12 +598,11 @@ impl App {
                 app.script_status = ScriptStatus::Failed(format!("Script execution failed (Error code: {}): {}", error_code, error_msg));
                 app.print_status = PrintStatus::Error(format!("Script execution failed (Error code: {}): {}", error_code, error_msg));
                 app.set_message(MessageType::Error, format!("Script execution failed (Error code: {}): {}", error_code, error_msg));
-                app.print_output.push(format!("[ERROR] 腳本執行失敗，exit code: {}, msg: {}", error_code, error_msg));
                 let _ = tx.send(false).await;
             }
         });
         
-        // 等待腳本完成並返回結果
+        // Wait for script completion and return result
         rx.recv().await.unwrap_or(false)
     }
 
@@ -758,7 +671,7 @@ impl App {
                 if item.alias != "No printable models found" {
                     {
                         let mut app = app_clone.lock().await;
-                        app.print_output.push(format!("[LOG] 選中模型: {}", item.alias));
+                        app.print_output.push(format!("[LOG] Selected model: {}", item.alias));
                     }
                     
                     // 下載模型
@@ -778,16 +691,16 @@ impl App {
                     if !download_only {
                         {
                             let mut app = app_clone.lock().await;
-                            app.print_output.push("[LOG] 準備執行 run_print_script".to_string());
+                            app.print_output.push("[LOG] Preparing to run_print_script".to_string());
                         }
                         
                         let success = App::run_print_script(Arc::clone(&app_clone)).await;
                         
                         let mut app = app_clone.lock().await;
                         if success {
-                            app.print_output.push("[LOG] run_print_script 執行成功".to_string());
+                            app.print_output.push("[LOG] run_print_script executed successfully".to_string());
                         } else {
-                            app.print_output.push("[LOG] run_print_script 執行失敗".to_string());
+                            app.print_output.push("[LOG] run_print_script executed failed".to_string());
                         }
                     }
                 }
