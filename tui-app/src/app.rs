@@ -610,11 +610,16 @@ impl App {
         // 立即顯示停止狀態
         self.set_message(MessageType::Info, "Stopping print...".to_string());
         
-        // 使用 spawn 啟動命令，捕捉輸出以便顯示
+        // 使用絕對路徑
+        let current_dir = std::env::current_dir().unwrap_or_default();
+        let script_path = current_dir.join("Gcode-Transmit").join("Gcode-Process.sh");
+        let script_path_str = script_path.to_string_lossy();
+        
+        let command = format!("{} --stop", script_path_str);
+        
         let output = match tokio::process::Command::new("sh")
-            .current_dir("Gcode-Transmit")
-            .arg("Gcode-Process.sh")
-            .arg("--stop")
+            .arg("-c")
+            .arg(&command)
             .output()
             .await {
                 Ok(output) => output,
