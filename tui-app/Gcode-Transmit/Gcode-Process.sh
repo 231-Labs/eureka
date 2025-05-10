@@ -9,12 +9,17 @@ if [ "$Options_control" == "--print" ]; then
     echo "Printer not connected!"
     exit 1
   fi
-  /home/ubuntu/eureka/tui-app/Gcode-Transmit/main/Gcode-Send.sh
-  # ./main/Gcode-Send.sh
+
+  /home/ubuntu/eureka/tui-app/Gcode-Transmit/main/Gcode-Send.sh &
+  wait $!
+  echo $? > /home/ubuntu/eureka/tui-app/Gcode-Transmit/Gcode-Send-Status
 
 elif [ "$Options_control" == "--stop" ]; then
+
   /home/ubuntu/eureka/tui-app/Gcode-Transmit/main/Gcode-Stop.sh
-  # ./main/Gcode-Stop.sh
+  wait $!
+  echo $? > /home/ubuntu/eureka/tui-app/Gcode-Transmit/Gcode-Stop-Status
+
 
 elif [ "$Options_control" == "--help" ]; then
 
