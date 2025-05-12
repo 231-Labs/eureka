@@ -28,8 +28,8 @@ module eureka::eureka {
     };
 
     /// === Errors ===
-    const ENotAuthorized: u64 = 1;
-    const EPrinterBusy: u64 = 2;
+    /// const ENotAuthorized: u64 = 1;
+    const EPrintJobCompleted: u64 = 1;
     
 
     /// === One Time Witness ===
@@ -39,13 +39,13 @@ module eureka::eureka {
     /// === Structs ===
     
     /// Registry for all printers in the system
-    public struct PrinterRegisty has key {
+    public struct PrinterRegistry has key {
         id: UID,
         printers: Table<ID, address>,
     }
 
     // Represents a 3D printer with associated properties and balance
-    public struct Printer has key {
+    public struct Printer has key, store {
         id: UID,
         owner: address,
         alias: String,
@@ -53,11 +53,11 @@ module eureka::eureka {
         pool: Balance<SUI>,
     }
 
-    // Capability object that authorizes printer operations
-    public struct PrinterCap has key, store {
-        id: UID,
-        printer_id: ID,
-    }
+    // // Capability object that authorizes printer operations
+    // public struct PrinterCap has key, store {
+    //     id: UID,
+    //     printer_id: ID,
+    // }
 
     /// === Events ===
      
@@ -93,7 +93,7 @@ module eureka::eureka {
     
     /// Initializes the module with a registry
     fun init(otw: EUREKA, ctx: &mut TxContext) {
-        let registry = PrinterRegisty {
+        let registry = PrinterRegistry {
             id: object::new(ctx),
             printers: sui::table::new(ctx),
         };
@@ -106,7 +106,7 @@ module eureka::eureka {
     
     /// Registers a new printer in the registry
     public entry fun register_printer(
-        state: &mut PrinterRegisty,
+        state: &mut PrinterRegistry,
         alias: String,
         ctx: &mut TxContext,
     ) {
@@ -122,13 +122,13 @@ module eureka::eureka {
 
         let printer_id = object::uid_to_inner(&printer.id);
 
-        let cap = PrinterCap {
-            id: object::new(ctx),
-            printer_id,
-        };
+        // let cap = PrinterCap {
+        //     id: object::new(ctx),
+        //     printer_id,
+        // };
 
-        transfer::share_object(printer);
-        transfer::transfer(cap, sender);
+        transfer::public_transfer(printer, sender);
+        //transfer::public_transfer(cap, sender);
         table::add(&mut state.printers, printer_id, sender);
 
         event::emit(PrinterRegistered {
@@ -160,7 +160,7 @@ module eureka::eureka {
         );
         
         // Add job to printer as dynamic field
-        add_print_job_field(printer, b"current_job", job);
+        add_print_job_field(printer, b"print_job", job);
 
         event::emit(PrintJobCreated {
             job_id: get_print_job_id_via_printer(printer),
@@ -173,27 +173,29 @@ module eureka::eureka {
 
     // Starts a print job and updates the printer status
     public entry fun start_print_job(
-        cap: &PrinterCap,
+        //_cap: &PrinterCap,
         printer: &mut Printer,
         sculpt: &mut Sculpt,
         clock: &clock::Clock,
     ) {
         mutate_print_job_status_via_printer(printer);
         mutate_print_job_start_time_via_printer(printer, clock);
-        update_printer_status(cap, printer, false);
-        print_sculpt(sculpt,clock);
+        print_sculpt(sculpt, clock);
     }
 
     // Completes a print job and updates the printer status
     public entry fun complete_print_job(
-        cap: &PrinterCap,
+        //cap: &PrinterCap,
         printer: &mut Printer,
         sculpt: Sculpt,
         clock: &clock::Clock,
         ctx: &mut TxContext,
     ) {
-        // Check if the print job is already completed
-        assert!(get_print_job_status_via_printer(printer), EPrinterBusy);
+        // Check if the printer is authorized
+        //assert!(cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
+        
+        // Check if the print job is active (not completed)
+        assert!(get_print_job_status_via_printer(printer), EPrintJobCompleted);
         
         // Update job status
         mutate_print_job_status_via_printer(printer);
@@ -209,18 +211,15 @@ module eureka::eureka {
 
         // Archive print job to sculpt
         archive_print_job(dof::borrow_mut(&mut printer.id, b"current_job"), sculpt);
-        
-        // Update printer status to available
-        update_printer_status(cap, printer, true);
     }
 
     // Withdraws accumulated fees from a printer
-    public entry fun withdraw_fees(
-        cap: &PrinterCap,
+    entry fun withdraw_fees(
+        // cap: &PrinterCap,
         printer: &mut Printer,
         ctx: &mut TxContext,
     ) {
-        assert!(cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
+        //assert!(cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
         let amount = balance::value(&printer.pool);
         let coin = coin::from_balance(balance::split(&mut printer.pool, amount), ctx);
         transfer::public_transfer(coin, tx_context::sender(ctx));
@@ -229,17 +228,16 @@ module eureka::eureka {
     /// === Status Management Functions ===
     
     /// Updates a printer's online status
-    fun update_printer_status(
-        cap: &PrinterCap,
+    entry fun update_printer_status(
+        // cap: &PrinterCap,
         printer: &mut Printer,
-        new_status: bool,
     ) {
-        assert!(cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
-        printer.online = new_status;
+        //assert!(cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
+        printer.online = !printer.online;
         
         event::emit(PrinterStatusUpdated {
             printer_id: object::uid_to_inner(&printer.id),
-            new_status,
+            new_status: printer.online,
         });
     }
 
@@ -321,6 +319,17 @@ module eureka::eureka {
     /// Gets the online status of a printer
     public fun get_printer_status(printer: &Printer): bool {
         printer.online
+    }
+
+
+    /// === Test Only Functions ===
+    #[test_only]
+    public fun test_init_for_testing(ctx: &mut TxContext) {
+        let registry = PrinterRegistry {
+            id: object::new(ctx),
+            printers: sui::table::new(ctx),
+        };
+        transfer::share_object(registry);
     }
 }
 
