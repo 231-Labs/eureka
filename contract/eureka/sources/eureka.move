@@ -11,6 +11,7 @@ module eureka::eureka {
         dynamic_object_field as dof,
     };
     use eureka::print_job::{
+        archive_print_job,
         mutate_print_job_status,
         mutate_print_job_start_time,
         get_print_job_status,
@@ -187,6 +188,7 @@ module eureka::eureka {
     public entry fun complete_print_job(
         cap: &PrinterCap,
         printer: &mut Printer,
+        sculpt: Sculpt,
         clock: &clock::Clock,
         ctx: &mut TxContext,
     ) {
@@ -204,6 +206,9 @@ module eureka::eureka {
         
         // Emit completion event
         emit_print_job_completed_event(printer, ctx);
+
+        // Archive print job to sculpt
+        archive_print_job(dof::borrow_mut(&mut printer.id, b"current_job"), sculpt);
         
         // Update printer status to available
         update_printer_status(cap, printer, true);

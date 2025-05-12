@@ -5,9 +5,9 @@ pub const SCULPT_DEVNET_PACKAGE_ID: &str = "0x2571c1e364b5647e1ee17b43f9f289e5c6
 
 /// Testnet
 pub const WALRUS_COIN_TYPE: &str = "0x356a26eb9e012a68958082340d4c4116e7f55615cf27affcff209cf0ae544f59::wal::WAL";
-pub const EUREKA_TESTNET_PACKAGE_ID: &str = "0x18815fa6daf0719bbab787c48588b7d4baaccc224e18c63446ad623c431555c7";
-pub const EUREKA_TESTNET_PRINTER_REGISTRY_ID: &str = "0x19d08617c535d9a2299c40830d443f36bd31f2ea49be619a8448dcc89ecc9e97";
-pub const SCULPT_TESTNET_PACKAGE_ID: &str = "0xf560b0620dd21ccab475db492d6f40f3def6223bbd000f2dba0a1b6d89b7d36e";
+pub const EUREKA_TESTNET_PACKAGE_ID: &str = "0x3bb9c121b2e6cc59c35bacecd692fe1a4ca59f5b540ae6cf7242d0c473f94974";
+pub const EUREKA_TESTNET_PRINTER_REGISTRY_ID: &str = "0x793d181af3bc04bcc85b7b0ce84fc3dbbb437ce7f541796774468e1da905b715";
+pub const SCULPT_TESTNET_PACKAGE_ID: &str = "0x3bb9c121b2e6cc59c35bacecd692fe1a4ca59f5b540ae6cf7242d0c473f94974";
 pub const AGGREGATOR_URL: &str = "https://walrus-agg-test.bucketprotocol.io";
 
 pub struct NetworkPackageIds {
