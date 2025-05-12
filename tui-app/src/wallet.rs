@@ -3,9 +3,11 @@ use sui_sdk::types::base_types::{SuiAddress, ObjectID};
 use sui_sdk::SuiClient;
 use sui_sdk::rpc_types::{SuiObjectDataFilter, SuiObjectResponseQuery, SuiObjectDataOptions};
 use sui_sdk::types::Identifier;
+use sui_sdk::rpc_types::{SuiMoveStruct, SuiMoveValue, SuiParsedData};
 use crate::utils::{NetworkState, shorten_id};
 use crate::constants::WALRUS_COIN_TYPE;
 use std::sync::Arc;
+use std::collections::BTreeMap;
 
 
 #[derive(Debug, Clone)]
@@ -13,6 +15,12 @@ pub struct SculptItem {
     pub alias: String,
     pub blob_id: String,
     pub printed_count: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct PrinterInfo {
+    pub id: String,
+    pub pool_balance: u128,
 }
 
 #[derive(Clone)]
@@ -49,7 +57,52 @@ impl Wallet {
         Ok(balance.total_balance)
     }
 
-    pub async fn get_user_printer_id(&self, address: SuiAddress) -> Result<String> {
+    // extract printer id from fields
+    fn extract_printer_id(&self, fields: &BTreeMap<String, SuiMoveValue>) -> Option<String> {
+        fields.get("id").and_then(|id_field| {
+            if let SuiMoveValue::UID { id } = id_field {
+                Some(shorten_id(&id.to_string()))
+            } else {
+                None
+            }
+        })
+    }
+    
+    // get pool balance from move struct
+    fn extract_pool_balance(&self, fields: &BTreeMap<String, SuiMoveValue>) -> u128 {
+        fields.get("pool")
+            .and_then(|pool_field| {
+                if let SuiMoveValue::Struct(pool_struct) = pool_field {
+                    if let SuiMoveStruct::WithFields(pool_fields) = pool_struct {
+                        pool_fields.get("value").and_then(|value| {
+                            if let SuiMoveValue::Number(amount) = value {
+                                amount.to_string().parse::<u128>().ok()
+                            } else {
+                                None
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0)
+    }
+    
+    // get printer info from move struct
+    fn extract_printer_from_move_struct(&self, move_struct: &SuiMoveStruct) -> Option<PrinterInfo> {
+        if let SuiMoveStruct::WithFields(fields) = move_struct {
+            let id = self.extract_printer_id(fields)?;
+            let pool_balance = self.extract_pool_balance(fields);
+            Some(PrinterInfo { id, pool_balance })
+        } else {
+            None
+        }
+    }
+
+    pub async fn get_printer_info(&self, address: SuiAddress) -> Result<PrinterInfo> {
         let package_id: ObjectID = self.network_state.get_current_package_ids().eureka_package_id.parse()?;
         let mut options = SuiObjectDataOptions::new();
         options.show_content = true;
@@ -66,35 +119,29 @@ impl Wallet {
             )
             .await?;
             
-        let printer_id = response.data
+        // try to get printer info from the first object
+        response.data
             .first()
             .and_then(|obj| obj.data.as_ref())
-            .and_then(|data| data.content.as_ref())
-            .and_then(|content| match content {
-                sui_sdk::rpc_types::SuiParsedData::MoveObject(move_obj) => {
-                    if let sui_sdk::rpc_types::SuiMoveStruct::WithFields(fields) = &move_obj.fields {
-                        fields.get("printer_id")
-                            .and_then(|id| if let sui_sdk::rpc_types::SuiMoveValue::Address(addr) = id {
-                                Some(addr.to_string())
-                            } else {
-                                None
-                            })
-                    } else {
-                        None
-                    }
-                },
-                _ => None
+            .and_then(|data| {
+                // extract info from content or use object id as backup
+                data.content.as_ref()
+                    .and_then(|content| {
+                        if let SuiParsedData::MoveObject(move_obj) = content {
+                            self.extract_printer_from_move_struct(&move_obj.fields)
+                        } else {
+                            None
+                        }
+                    })
+                    .or_else(|| {
+                        // backup plan: use object id
+                        Some(PrinterInfo {
+                            id: shorten_id(&data.object_id.to_string()),
+                            pool_balance: 0,
+                        })
+                    })
             })
-            .or_else(|| {
-                response.data
-                    .first()
-                    .and_then(|obj| obj.data.as_ref())
-                    .map(|data| data.object_id.to_string())
-            })
-            .map(|id| shorten_id(&id))
-            .ok_or_else(|| anyhow::anyhow!("No printer found"))?;
-
-        Ok(printer_id)
+            .ok_or_else(|| anyhow::anyhow!("No printer found"))
     }
 
     pub async fn get_user_sculpt(&self, address: SuiAddress) -> Result<Vec<SculptItem>> {

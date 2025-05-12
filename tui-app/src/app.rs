@@ -1,5 +1,5 @@
 use ratatui::widgets::ListState;
-use crate::wallet::{Wallet, SculptItem};
+use crate::wallet::{Wallet, SculptItem, PrinterInfo};
 use crate::utils::{setup_for_read, shorten_id, NetworkState};
 use crate::constants::{NETWORKS, AGGREGATOR_URL};
 use anyhow::Result;
@@ -104,10 +104,13 @@ impl App {
         // Get balance and printer id
         let sui_balance = wallet.get_sui_balance(wallet.get_active_address().await?).await?;
         let wal_balance = wallet.get_walrus_balance(wallet.get_active_address().await?).await?;
-        let printer_id = match wallet.get_user_printer_id(wallet.get_active_address().await?).await {
-            Ok(id) => id,
+        let printer_info = match wallet.get_printer_info(wallet.get_active_address().await?).await {
+            Ok(info) => info,
             Err(_e) => {
-                "No Printer ID".to_string()
+                PrinterInfo {
+                    id: "No Printer ID".to_string(),
+                    pool_balance: 0,
+                }
             }
         };
         
@@ -121,11 +124,18 @@ impl App {
             }]
         };
         
+        // 格式化池子餘額為 SUI
+        let pool_balance_formatted = if printer_info.pool_balance > 0 {
+            format!("{:.2} SUI", printer_info.pool_balance as f64 / 1_000_000_000.0)
+        } else {
+            "0.00 SUI".to_string()
+        };
+        
         let mut app = App {
             sui_client,
             wallet,
             wallet_address,
-            printer_id: printer_id.clone(),
+            printer_id: printer_info.id.clone(),
             is_online: false,
             sculpt_state: ListState::default(),
             tasks: Vec::new(),
@@ -133,7 +143,7 @@ impl App {
             is_confirming: false,
             is_harvesting: false,
             is_switching_network: false,
-            harvestable_rewards: "100.0 SUI".to_string(),
+            harvestable_rewards: pool_balance_formatted,
             sui_balance,
             wal_balance,
             network_state,
@@ -151,7 +161,7 @@ impl App {
         };
         
         // Check if printer registration is needed
-        if printer_id == "No Printer ID" {
+        if printer_info.id == "No Printer ID" {
             app.is_registering_printer = true;
             app.printer_registration_message = "Welcome to Eureka 3D Printing Platform!\n\nNo printer found. Please register your printer to continue.\n\nEnter your printer alias:".to_string();
         }
@@ -201,6 +211,8 @@ impl App {
         self.is_harvesting = false;
         // TODO: 實際執行 harvest 邏輯
         self.success_message = Some("Harvest completed successfully!".to_string());
+        // 重置獎勵餘額
+        self.harvestable_rewards = "0.00 SUI".to_string();
     }
 
     pub fn cancel_harvest(&mut self) {
@@ -320,7 +332,26 @@ impl App {
         self.wallet_address = shorten_id(&self.wallet.get_active_address().await?.to_string());
         self.sui_balance = self.wallet.get_sui_balance(self.wallet.get_active_address().await?).await?;
         self.wal_balance = self.wallet.get_walrus_balance(self.wallet.get_active_address().await?).await?;
-        self.printer_id = self.wallet.get_user_printer_id(self.wallet.get_active_address().await?).await?;
+        
+        // 更新 printer 信息和獎勵餘額
+        let printer_info = match self.wallet.get_printer_info(self.wallet.get_active_address().await?).await {
+            Ok(info) => info,
+            Err(_) => {
+                PrinterInfo {
+                    id: "No Printer ID".to_string(),
+                    pool_balance: 0,
+                }
+            }
+        };
+        self.printer_id = printer_info.id;
+        
+        // 格式化池子餘額為 SUI
+        if printer_info.pool_balance > 0 {
+            self.harvestable_rewards = format!("{:.2} SUI", printer_info.pool_balance as f64 / 1_000_000_000.0);
+        } else {
+            self.harvestable_rewards = "0.00 SUI".to_string();
+        }
+
         self.sculpt_items = self.wallet.get_user_sculpt(self.wallet.get_active_address().await?).await?;
         
         Ok(())
