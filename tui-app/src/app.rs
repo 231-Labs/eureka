@@ -170,12 +170,12 @@ impl App {
         self.is_online = !self.is_online;
         self.is_confirming = false;
 
-        // 如果切換到離線狀態，更新 bottega 列表
+        // if offline, update sculpt items
         if !self.is_online {
             match self.wallet.get_user_sculpt(self.wallet.get_active_address().await?).await {
                 Ok(items) => {
                     self.sculpt_items = items;
-                    // 重置選擇狀態
+                    // reset selection state
                     if !self.sculpt_items.is_empty() {
                         self.sculpt_state.select(Some(0));
                     }
