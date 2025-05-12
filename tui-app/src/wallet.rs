@@ -5,6 +5,7 @@ use sui_sdk::rpc_types::{SuiObjectDataFilter, SuiObjectResponseQuery, SuiObjectD
 use sui_sdk::types::Identifier;
 use crate::utils::{setup_for_read, NetworkState, shorten_id};
 use crate::constants::WALRUS_COIN_TYPE;
+use std::sync::Arc;
 
 
 #[derive(Debug, Clone)]
@@ -16,23 +17,22 @@ pub struct BottegaItem {
 
 #[derive(Clone)]
 pub struct Wallet {
-    client: SuiClient,
+    client: Arc<SuiClient>,
     address: SuiAddress,
     network_state: NetworkState,
 }
 
 impl Wallet {
-    pub async fn new(network_state: &NetworkState) -> Result<Self> {
-        let (client, address) = setup_for_read(network_state).await?;
-        Ok(Wallet { 
+    pub async fn new(network_state: &NetworkState, client: Arc<SuiClient>, address: SuiAddress) -> Self {
+        Wallet { 
             client, 
             address,
             network_state: network_state.clone(),
-        })
+        }
     }
 
-    pub fn get_client(&self) -> &SuiClient {
-        &self.client
+    pub fn get_client(&self) -> Arc<SuiClient> {
+        Arc::clone(&self.client)
     }
 
     pub async fn get_active_address(&self) -> Result<SuiAddress> {

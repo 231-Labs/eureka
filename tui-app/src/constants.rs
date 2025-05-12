@@ -28,7 +28,7 @@ pub const NETWORK_PACKAGE_IDS: [NetworkPackageIds; 3] = [
         bottega_package_id: SCULPT_TESTNET_PACKAGE_ID,
     },
     NetworkPackageIds {
-        eureka_package_id: "",  // 主網的 ID 待添加
+        eureka_package_id: "",  // TODO: Add mainnet ID
         eureka_printer_registry_id: "",
         bottega_package_id: "",
     },
@@ -40,7 +40,7 @@ pub const NETWORKS: [(&str, &str); 3] = [
     ("mainnet", "https://fullnode.mainnet.sui.io:443"),
 ];
 
-// ASCII藝術字EUREKA常量
+// ASCII art EUREKA constant
 pub const _EUREKA_ASCII_ART: &str = r#"
 ███████╗██╗   ██╗██████╗ ███████╗██╗  ██╗ █████╗ ██╗
 ██╔════╝██║   ██║██╔══██╗██╔════╝██║ ██╔╝██╔══██╗██║
@@ -50,7 +50,7 @@ pub const _EUREKA_ASCII_ART: &str = r#"
 ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝
 "#;
 
-// EUREKA動畫框架
+// EUREKA ASCII art frames
 pub const EUREKA_FRAMES: [&str; 3] = [
     r#"
 ███████╗██╗   ██╗██████╗ ███████╗██╗  ██╗ █████╗ 
@@ -78,5 +78,5 @@ pub const EUREKA_FRAMES: [&str; 3] = [
 "#,
 ];
 
-// 添加構建在Sui上的標語
+// Slogan for building on Sui
 pub const BUILD_ON_SUI: &str = "Build on Sui";

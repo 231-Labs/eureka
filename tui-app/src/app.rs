@@ -1,10 +1,11 @@
 use ratatui::widgets::ListState;
 use crate::wallet::{Wallet, BottegaItem};
-use crate::utils::{NetworkState, shorten_id};
+use crate::utils::{setup_for_read, shorten_id, NetworkState};
 use crate::constants::{NETWORKS, AGGREGATOR_URL};
 use anyhow::Result;
 use crate::transactions::TransactionBuilder;
 use sui_sdk::types::base_types::ObjectID;
+use sui_sdk::SuiClient;
 use futures;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -60,6 +61,7 @@ pub enum PrintStatus {
 
 #[derive(Clone)]
 pub struct App {
+    pub sui_client: Arc<SuiClient>,
     pub wallet: Wallet,
     pub wallet_address: String,
     pub printer_id: String,
@@ -90,7 +92,13 @@ pub struct App {
 impl App {
     pub async fn new() -> Result<App> {
         let network_state = NetworkState::new();
-        let wallet = Wallet::new(&network_state).await?;
+        
+        // 獲取 SuiClient 和地址
+        let (client, address) = setup_for_read(&network_state).await?;
+        let sui_client = Arc::new(client);
+        
+        // 初始化 Wallet
+        let wallet = Wallet::new(&network_state, Arc::clone(&sui_client), address).await;
         let wallet_address = shorten_id(&wallet.get_active_address().await?.to_string());
         
         // Get balance and printer id
@@ -114,6 +122,7 @@ impl App {
         };
         
         let mut app = App {
+            sui_client,
             wallet,
             wallet_address,
             printer_id: printer_id.clone(),
@@ -302,7 +311,12 @@ impl App {
     }
 
     async fn do_update_network(&mut self) -> Result<()> {
-        self.wallet = Wallet::new(&self.network_state).await?;
+        // 獲取新的 SuiClient 和地址
+        let (client, address) = setup_for_read(&self.network_state).await?;
+        self.sui_client = Arc::new(client);
+        
+        // 更新 Wallet
+        self.wallet = Wallet::new(&self.network_state, Arc::clone(&self.sui_client), address).await;
         self.wallet_address = shorten_id(&self.wallet.get_active_address().await?.to_string());
         self.sui_balance = self.wallet.get_sui_balance(self.wallet.get_active_address().await?).await?;
         self.wal_balance = self.wallet.get_walrus_balance(self.wallet.get_active_address().await?).await?;
@@ -368,7 +382,7 @@ impl App {
                     self.printer_registration_message = "Sending transaction to network...\nPlease wait...".to_string();
                     
                     let builder = TransactionBuilder::new(
-                        self.wallet.get_client().clone(),
+                        Arc::clone(&self.sui_client),
                         ObjectID::from(self.wallet.get_active_address().await?),
                         self.network_state.clone()
                     ).await;

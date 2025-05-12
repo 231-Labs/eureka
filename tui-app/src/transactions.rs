@@ -18,15 +18,16 @@ use shared_crypto::intent::Intent;
 use std::path::PathBuf;
 use anyhow::{anyhow, Result};
 use crate::utils::NetworkState;
+use std::sync::Arc;
 
 pub struct TransactionBuilder {
-    sui_client: SuiClient,
+    sui_client: Arc<SuiClient>,
     sender: SuiAddress,
     network_state: NetworkState,
 }
 
 impl TransactionBuilder {
-    pub async fn new(sui_client: SuiClient, sender: ObjectID, network_state: NetworkState) -> Self {
+    pub async fn new(sui_client: Arc<SuiClient>, sender: ObjectID, network_state: NetworkState) -> Self {
         Self {
             sui_client,
             sender: SuiAddress::from(sender),
