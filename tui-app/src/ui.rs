@@ -564,15 +564,15 @@ fn draw_main(f: &mut Frame, app: &mut App) {
                 .fg(secondary_color));
         f.render_stateful_widget(tasks_list, left_chunks[5], &mut app.tasks_state);
     } else {
-        // 離線狀態顯示 bottega 列表
-        let bottega_items: Vec<ListItem> = app.bottega_items
+        // 離線狀態顯示 sculpt 列表
+        let sculpt_items: Vec<ListItem> = app.sculpt_items
             .iter()
             .map(|item| {
                 ListItem::new(format!("◈ {} [Printed: {}]", item.alias, item.printed_count))
                     .style(Style::default().fg(accent_color))
             })
             .collect();
-        let bottega_list = List::new(bottega_items)
+        let sculpt_list = List::new(sculpt_items)
             .block(Block::default()
                 .title("3D MODELS")
                 .borders(Borders::ALL)
@@ -582,7 +582,7 @@ fn draw_main(f: &mut Frame, app: &mut App) {
                 .add_modifier(Modifier::BOLD)
                 .fg(secondary_color))
             .highlight_symbol(">> ");
-        f.render_stateful_widget(bottega_list, left_chunks[5], &mut app.bottega_state);
+        f.render_stateful_widget(sculpt_list, left_chunks[5], &mut app.sculpt_state);
     }
 
     // 右側內容區
@@ -761,7 +761,7 @@ fn draw_main(f: &mut Frame, app: &mut App) {
         .block(help_block);
     f.render_widget(help, main_layout[5]);
     
-    // 模擬太空船環境噪音效果 - 在不同位置添加隨機"雜訊"
+    // Simulate spaceship ambient noise effect - add random "noise" at different positions
     for _ in 0..15 {
         let noise_char = match time % 3 {
             0 => "▓",

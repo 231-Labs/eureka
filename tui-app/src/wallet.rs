@@ -3,13 +3,13 @@ use sui_sdk::types::base_types::{SuiAddress, ObjectID};
 use sui_sdk::SuiClient;
 use sui_sdk::rpc_types::{SuiObjectDataFilter, SuiObjectResponseQuery, SuiObjectDataOptions};
 use sui_sdk::types::Identifier;
-use crate::utils::{setup_for_read, NetworkState, shorten_id};
+use crate::utils::{NetworkState, shorten_id};
 use crate::constants::WALRUS_COIN_TYPE;
 use std::sync::Arc;
 
 
 #[derive(Debug, Clone)]
-pub struct BottegaItem {
+pub struct SculptItem {
     pub alias: String,
     pub blob_id: String,
     pub printed_count: u64,
@@ -29,10 +29,6 @@ impl Wallet {
             address,
             network_state: network_state.clone(),
         }
-    }
-
-    pub fn get_client(&self) -> Arc<SuiClient> {
-        Arc::clone(&self.client)
     }
 
     pub async fn get_active_address(&self) -> Result<SuiAddress> {
@@ -101,7 +97,7 @@ impl Wallet {
         Ok(printer_id)
     }
 
-    pub async fn get_user_bottega(&self, address: SuiAddress) -> Result<Vec<BottegaItem>> {
+    pub async fn get_user_sculpt(&self, address: SuiAddress) -> Result<Vec<SculptItem>> {
         let package_id: ObjectID = self.network_state.get_current_package_ids().bottega_package_id.parse()?;
         let mut options = SuiObjectDataOptions::new();
         options.show_content = true;
@@ -120,24 +116,24 @@ impl Wallet {
             )
             .await?;
 
-        let bottega_items: Vec<BottegaItem> = response.data.iter()
-            .filter_map(|obj| self.parse_bottega_object(obj))
+        let sculpt_items: Vec<SculptItem> = response.data.iter()
+            .filter_map(|obj| self.parse_sculpt_object(obj))
             .collect();
 
-        Ok(if bottega_items.is_empty() {
-            vec![BottegaItem {
+        Ok(if sculpt_items.is_empty() {
+            vec![SculptItem {
                 alias: "No printable models found".to_string(),
                 blob_id: String::new(),
                 printed_count: 0,
             }]
         } else {
-            let mut items = bottega_items;
+            let mut items = sculpt_items;
             items.sort_by(|a, b| a.alias.cmp(&b.alias));
             items
         })
     }
 
-    fn parse_bottega_object(&self, obj: &sui_sdk::rpc_types::SuiObjectResponse) -> Option<BottegaItem> {
+    fn parse_sculpt_object(&self, obj: &sui_sdk::rpc_types::SuiObjectResponse) -> Option<SculptItem> {
         obj.data.as_ref()
             .and_then(|data| data.content.as_ref())
             .and_then(|content| match content {
@@ -161,7 +157,7 @@ impl Wallet {
                         sui_sdk::rpc_types::SuiMoveValue::String(printed_str),
                         sui_sdk::rpc_types::SuiMoveValue::String(alias_str)
                     ) => {
-                        Some(BottegaItem {
+                        Some(SculptItem {
                             alias: alias_str.clone(),
                             blob_id: structure_id.clone(),
                             printed_count: printed_str.parse::<u64>().unwrap_or(0),
