@@ -1,13 +1,27 @@
+use std::{
+    collections::BTreeMap,
+    sync::Arc,
+};
 use anyhow::Result;
-use sui_sdk::types::base_types::{SuiAddress, ObjectID};
-use sui_sdk::SuiClient;
-use sui_sdk::rpc_types::{SuiObjectDataFilter, SuiObjectResponseQuery, SuiObjectDataOptions};
-use sui_sdk::types::Identifier;
-use sui_sdk::rpc_types::{SuiMoveStruct, SuiMoveValue, SuiParsedData};
-use crate::utils::{NetworkState, shorten_id};
-use crate::constants::WALRUS_COIN_TYPE;
-use std::sync::Arc;
-use std::collections::BTreeMap;
+use sui_sdk::{
+    rpc_types::{
+        SuiMoveStruct,
+        SuiMoveValue,
+        SuiObjectDataFilter,
+        SuiObjectDataOptions,
+        SuiObjectResponseQuery,
+        SuiParsedData,
+    },
+    types::{
+        base_types::{ObjectID, SuiAddress},
+        Identifier,
+    },
+    SuiClient,
+};
+use crate::{
+    constants::WALRUS_COIN_TYPE,
+    utils::{NetworkState, shorten_id},
+};
 
 
 #[derive(Debug, Clone)]
