@@ -394,7 +394,6 @@ impl App {
                         &self.printer_alias
                     ).await {
                         Ok(tx_digest) => {
-                            self.printer_id = tx_digest.clone();
                             self.registration_status = RegistrationStatus::Success(tx_digest.clone());
                             self.printer_registration_message = format!(
                                 "Registration Successful!\n\

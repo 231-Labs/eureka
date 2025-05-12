@@ -152,10 +152,6 @@ fn draw_registration(f: &mut Frame, app: &mut App) {
                     Span::raw(&app.printer_alias),
                 ]),
                 Line::from(vec![
-                    Span::styled("Printer ID: ", Style::default().fg(highlight_color)),
-                    Span::raw(&app.printer_id),
-                ]),
-                Line::from(vec![
                     Span::styled("Transaction: ", Style::default().fg(highlight_color)),
                     Span::raw(tx_id),
                 ]),
@@ -444,11 +440,11 @@ fn draw_main(f: &mut Frame, app: &mut App) {
 
     // 代幣餘額顯示
     let printer_block = Block::default()
-        .title("PRINTER ID")
+        .title("WALLET ADDRESS")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(primary_color));
-    let printer_text = Paragraph::new(app.printer_id.clone())
+    let printer_text = Paragraph::new(app.wallet_address.clone())
         .block(printer_block)
         .style(Style::default().fg(secondary_color))
         .alignment(Alignment::Left);
