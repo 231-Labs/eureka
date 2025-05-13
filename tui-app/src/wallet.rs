@@ -20,7 +20,7 @@ use sui_sdk::{
 };
 use crate::{
     constants::WALRUS_COIN_TYPE,
-    utils::{NetworkState, shorten_id},
+    utils::{NetworkState},
 };
 
 
@@ -75,7 +75,9 @@ impl Wallet {
     fn extract_printer_id(&self, fields: &BTreeMap<String, SuiMoveValue>) -> Option<String> {
         fields.get("id").and_then(|id_field| {
             if let SuiMoveValue::UID { id } = id_field {
-                Some(shorten_id(&id.to_string()))
+                // make sure the original id format is preserved, including the 0x prefix
+                let id_str = id.to_string();
+                Some(id_str)
             } else {
                 None
             }
@@ -148,9 +150,9 @@ impl Wallet {
                         }
                     })
                     .or_else(|| {
-                        // backup plan: use object id
+                        // backup plan: use object id with full format
                         Some(PrinterInfo {
-                            id: shorten_id(&data.object_id.to_string()),
+                            id: data.object_id.to_string(),
                             pool_balance: 0,
                         })
                     })

@@ -124,7 +124,7 @@ impl App {
             }]
         };
         
-        // 格式化池子餘額為 SUI
+        // 格式化池子餘額為 SUI TODO: Test this
         let pool_balance_formatted = if printer_info.pool_balance > 0 {
             format!("{:.2} SUI", printer_info.pool_balance as f64 / 1_000_000_000.0)
         } else {
@@ -157,7 +157,7 @@ impl App {
             script_status: ScriptStatus::Idle,
             print_status: PrintStatus::Idle,
             success_message: None,
-            print_output: Vec::new(),  // 初始化輸出列表
+            print_output: Vec::new(),  // initialize output list
         };
         
         // Check if printer registration is needed
@@ -177,8 +177,62 @@ impl App {
     }
 
     pub async fn confirm_toggle(&mut self) -> Result<()> {
-        self.is_online = !self.is_online;
+        // track original state
+        let original_state = self.is_online;
+        
+        // first toggle state
         self.is_confirming = false;
+
+        // try to update printer status
+        if self.printer_id != "No Printer ID" {
+            self.set_message(MessageType::Info, "Sending status update to blockchain...".to_string());
+            
+            let builder = TransactionBuilder::new(
+                Arc::clone(&self.sui_client),
+                ObjectID::from(self.wallet.get_active_address().await?),
+                self.network_state.clone()
+            ).await;
+            
+            // handle printer_id parsing error
+            let printer_id_str = if !self.printer_id.starts_with("0x") {
+                let id_with_prefix = format!("0x{}", self.printer_id);
+                self.set_message(MessageType::Info, format!("Converting printer ID format '{}' to '{}'", self.printer_id, id_with_prefix));
+                id_with_prefix
+            } else {
+                self.printer_id.clone()
+            };
+            
+            let printer_object_id = match ObjectID::from_hex_literal(&printer_id_str) {
+                Ok(id) => id,
+                Err(e) => {
+                    self.set_message(MessageType::Error, format!("Invalid printer ID format: {} - {}", printer_id_str, e));
+                    return Ok(());
+                }
+            };
+            
+            match builder.update_printer_status(printer_object_id).await {
+                Ok(tx_digest) => {
+                    // only update UI state after transaction success
+                    self.is_online = !original_state;
+                    
+                    let status_text = if self.is_online { "ONLINE" } else { "OFFLINE" };
+                    
+                    // set success message directly
+                    self.set_message(
+                        MessageType::Success, 
+                        format!("Printer status updated to {} (Transaction ID: {})", status_text, tx_digest)
+                    );
+                },
+                Err(e) => {
+                    // only set error message
+                    self.set_message(MessageType::Error, format!("Failed to update printer status: {}", e));
+                    return Ok(());
+                }
+            };
+        } else {
+            // if no printer, directly update UI state
+            self.is_online = !original_state;
+        }
 
         // if offline, update sculpt items
         if !self.is_online {
@@ -209,9 +263,9 @@ impl App {
 
     pub fn confirm_harvest(&mut self) {
         self.is_harvesting = false;
-        // TODO: 實際執行 harvest 邏輯
+        // TODO: actually execute harvest logic
         self.success_message = Some("Harvest completed successfully!".to_string());
-        // 重置獎勵餘額
+        // reset reward balance
         self.harvestable_rewards = "0.00 SUI".to_string();
     }
 
@@ -298,7 +352,7 @@ impl App {
     #[allow(dead_code)]
     pub fn switch_network(&mut self) {
         self.network_state.next_network();
-        // 觸發網路更新
+        // trigger network update
         if let Err(e) = futures::executor::block_on(self.update_network()) {
             self.error_message = Some(e.to_string());
         }
@@ -309,31 +363,31 @@ impl App {
         
         match self.do_update_network().await {
             Ok(_) => {
-                // 重置選擇狀態
+                // reset selection state
                 if !self.sculpt_items.is_empty() {
                     self.sculpt_state.select(Some(0));
                 }
                 Ok(())
             },
             Err(e) => {
-                self.error_message = Some(e.to_string());  // Store error message
-                Ok(())  // Don't interrupt program execution
+                self.error_message = Some(e.to_string());  // store error message
+                Ok(())  // don't interrupt program execution
             }
         }
     }
 
     async fn do_update_network(&mut self) -> Result<()> {
-        // 獲取新的 SuiClient 和地址
+        // get new SuiClient and address
         let (client, address) = setup_for_read(&self.network_state).await?;
         self.sui_client = Arc::new(client);
         
-        // 更新 Wallet
+        // update Wallet
         self.wallet = Wallet::new(&self.network_state, Arc::clone(&self.sui_client), address).await;
         self.wallet_address = shorten_id(&self.wallet.get_active_address().await?.to_string());
         self.sui_balance = self.wallet.get_sui_balance(self.wallet.get_active_address().await?).await?;
         self.wal_balance = self.wallet.get_walrus_balance(self.wallet.get_active_address().await?).await?;
         
-        // 更新 printer 信息和獎勵餘額
+        // update printer info and reward balance
         let printer_info = match self.wallet.get_printer_info(self.wallet.get_active_address().await?).await {
             Ok(info) => info,
             Err(_) => {
@@ -345,7 +399,7 @@ impl App {
         };
         self.printer_id = printer_info.id;
         
-        // 格式化池子餘額為 SUI
+        // format pool balance to SUI
         if printer_info.pool_balance > 0 {
             self.harvestable_rewards = format!("{:.2} SUI", printer_info.pool_balance as f64 / 1_000_000_000.0);
         } else {
@@ -385,7 +439,7 @@ impl App {
         self.success_message = None;
     }
 
-    // 設置訊息的方法
+    // set message method
     pub fn set_message(&mut self, message_type: MessageType, message: String) {
         self.message_type = message_type.clone();
         match message_type {
@@ -466,7 +520,7 @@ impl App {
         let temp_path = "test.stl";
         let final_path = "Gcode-Transmit/test.stl";
         
-        // 先下載到臨時文件
+        // download to temporary file
         let status = tokio::process::Command::new("curl")
             .arg("-s")
             .arg("-S")
@@ -481,7 +535,7 @@ impl App {
             return Err(anyhow::anyhow!("Failed to download 3D model"));
         }
 
-        // 移動文件到目標目錄
+        // move file to target directory
         if let Err(e) = fs::rename(temp_path, final_path) {
             self.set_message(MessageType::Error, format!("Failed to move 3D model: {}", e));
             return Err(anyhow::anyhow!("Failed to move 3D model: {}", e));
@@ -497,16 +551,16 @@ impl App {
             .as_secs();
         let frame = (time % 3) as usize;
 
-        // 只顯示一種狀態：優先顯示 print_status
+        // only show one state: prioritize print_status
         match &self.print_status {
             PrintStatus::Idle => {
-                // 檢查是否在停止過程中
+                // check if stopping process
                 if matches!(self.message_type, MessageType::Info) && 
                    self.error_message.as_ref().map_or(false, |msg| msg.contains("Stopping print")) {
                     return "║▒▓░ STOPPING PRINT... ░▓▒║".to_string();
                 }
 
-                // 沒有列印時才顯示 script_status
+                // only show script_status when no print
                 match self.script_status {
                     ScriptStatus::Idle => {
                         match frame {
@@ -651,10 +705,10 @@ impl App {
     }
 
     pub async fn run_stop_script(&mut self) -> Result<()> {
-        // 立即顯示停止狀態
+        // immediately show stopping state
         self.set_message(MessageType::Info, "Stopping print...".to_string());
         
-        // 使用 spawn 啟動命令，捕捉輸出以便顯示
+        // use spawn to start command, capture output to display
         let output = match tokio::process::Command::new("sh")
             .current_dir("Gcode-Transmit")
             .arg("Gcode-Process.sh")
@@ -670,18 +724,18 @@ impl App {
                 }
             };
 
-        // 處理輸出
+        // process output
         if output.status.success() {
-            // 從輸出中獲取訊息
+            // get message from output
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            // 重置狀態
+            // reset state
             self.script_status = ScriptStatus::Idle;
             self.print_status = PrintStatus::Idle;
             self.set_message(MessageType::Success, 
                 if stdout.is_empty() { "Print stopped successfully".to_string() } else { stdout }
             );
         } else {
-            // 處理錯誤
+            // process error
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
             let error_msg = if !stderr.is_empty() {
@@ -702,7 +756,7 @@ impl App {
     pub async fn handle_model_selection(app: Arc<Mutex<App>>, download_only: bool) -> Result<()> {
         let app_clone = Arc::clone(&app);
         tokio::spawn(async move {
-            // 獲取選擇的模型
+            // get selected model
             let selected_item = {
                 let app_guard = app_clone.lock().await;
                 app_guard.sculpt_state
@@ -710,7 +764,7 @@ impl App {
                     .and_then(|idx| app_guard.sculpt_items.get(idx).cloned())
             };
 
-            // 處理選擇的模型
+            // process selected model
             if let Some(item) = selected_item {
                 if item.alias != "No printable models found" {
                     {
@@ -718,20 +772,20 @@ impl App {
                         app.print_output.push(format!("[LOG] Selected model: {}", item.alias));
                     }
                     
-                    // 下載模型
+                    // download model
                     let download_result = {
                         let mut app = app_clone.lock().await;
                         app.download_3d_model(&item.blob_id).await
                     };
 
-                    // 處理下載結果
+                    // process download result
                     if let Err(e) = download_result {
                         let mut app = app_clone.lock().await;
                         app.set_message(MessageType::Error, format!("Failed to download model: {}", e));
                         return;
                     }
 
-                    // 執行列印腳本（如果不是只下載）
+                    // run print script (not only download)
                     if !download_only {
                         {
                             let mut app = app_clone.lock().await;

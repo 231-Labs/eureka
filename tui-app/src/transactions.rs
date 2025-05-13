@@ -96,7 +96,12 @@ impl TransactionExecutor {
             .read_api()
             .get_object_with_options(object_id, SuiObjectDataOptions {
                 show_owner: true,
-                ..Default::default()
+                show_content: true,
+                show_display: false,
+                show_bcs: false,
+                show_storage_rebate: false,
+                show_previous_transaction: false,
+                show_type: true,
             })
             .await?
             .data
@@ -260,7 +265,74 @@ impl TransactionBuilder {
         ).await
     }
     
-    // 添加新的交易方法，例如:
+    /// Update printer status
+    pub async fn update_printer_status(
+        &self,
+        printer_id: ObjectID,
+    ) -> Result<String> {
+        // check printer object info
+        let object_response = self.executor.sui_client
+            .read_api()
+            .get_object_with_options(printer_id, SuiObjectDataOptions {
+                show_owner: true,
+                show_content: true,
+                show_display: false,
+                show_bcs: false,
+                show_storage_rebate: false,
+                show_previous_transaction: false,
+                show_type: true,
+            })
+            .await?;
+        
+        let object_data = object_response.data
+            .ok_or_else(|| anyhow!("Printer object not found"))?;
+        
+        // check object owner
+        let owner = object_data.owner
+            .ok_or_else(|| anyhow!("Printer object has no owner information"))?;
+        
+        // create argument for object type
+        let printer_arg = match owner {
+            Owner::AddressOwner(addr) => {
+                if addr != self.executor.sender {
+                    return Err(anyhow!("Printer is owned by a different address"));
+                }
+                
+                // use ImmOrOwnedObject type for argument
+                CallArg::Object(ObjectArg::ImmOrOwnedObject((
+                    printer_id,
+                    object_data.version,
+                    object_data.digest,
+                )))
+            },
+            Owner::Shared { initial_shared_version } => {
+                // use SharedObject type for argument
+                CallArg::Object(ObjectArg::SharedObject {
+                    id: printer_id,
+                    initial_shared_version,
+                    mutable: true,
+                })
+            },
+            _ => return Err(anyhow!("Printer has an unsupported ownership type")),
+        };
+        
+        // get package id
+        let package_id = ObjectID::from_hex_literal(&self.network_state.get_current_package_ids().eureka_package_id)?;
+        
+        // execute move call
+        let tx_digest = self.executor.execute_move_call(
+            package_id,
+            "eureka",
+            "update_printer_status",
+            vec![],
+            vec![printer_arg],
+            None,
+        ).await?;
+        
+        Ok(tx_digest)
+    }
+    
+    // add new transaction methods, for example:
     /*
     pub async fn print_sculpt(
         &self,
