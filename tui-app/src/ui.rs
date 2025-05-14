@@ -440,11 +440,11 @@ fn draw_main(f: &mut Frame, app: &mut App) {
 
     // 代幣餘額顯示
     let printer_block = Block::default()
-        .title("WALLET ADDRESS")
+        .title("PRINTER ID")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(primary_color));
-    let printer_text = Paragraph::new(app.wallet_address.clone())
+    let printer_text = Paragraph::new(app.printer_id.clone())
         .block(printer_block)
         .style(Style::default().fg(secondary_color))
         .alignment(Alignment::Left);
