@@ -3,7 +3,7 @@ module eureka::eureka {
     use std::string::{ String };
     use sui::{ 
         event,
-        table::{ Self, Table },
+        vec_set::{ Self, VecSet },
         balance::{ Self, Balance },
         coin::{ Self, Coin },
         sui::SUI,
@@ -41,7 +41,7 @@ module eureka::eureka {
     /// Registry for all printers in the system
     public struct PrinterRegistry has key {
         id: UID,
-        printers: Table<ID, address>,
+        printers: VecSet<ID>,
     }
 
     // Represents a 3D printer with associated properties and balance
@@ -95,7 +95,7 @@ module eureka::eureka {
     fun init(otw: EUREKA, ctx: &mut TxContext) {
         let registry = PrinterRegistry {
             id: object::new(ctx),
-            printers: sui::table::new(ctx),
+            printers: vec_set::empty(),
         };
 
         transfer::share_object(registry);
@@ -122,14 +122,8 @@ module eureka::eureka {
 
         let printer_id = object::uid_to_inner(&printer.id);
 
-        // let cap = PrinterCap {
-        //     id: object::new(ctx),
-        //     printer_id,
-        // };
-
         transfer::public_transfer(printer, sender);
-        //transfer::public_transfer(cap, sender);
-        table::add(&mut state.printers, printer_id, sender);
+        vec_set::insert(&mut state.printers, printer_id);
 
         event::emit(PrinterRegistered {
             printer_id,
@@ -327,7 +321,7 @@ module eureka::eureka {
     public fun test_init_for_testing(ctx: &mut TxContext) {
         let registry = PrinterRegistry {
             id: object::new(ctx),
-            printers: sui::table::new(ctx),
+            printers: vec_set::empty(),
         };
         transfer::share_object(registry);
     }

@@ -7,7 +7,6 @@ module eureka::eureka_tests{
     
     const ADMIN: address = @0xAD;
     const PRINTER_OWNER: address = @0xB0B;
-    // const CUSTOMER: address = @0xA11CE;
     const ENotImplemented: u64 = 0;
 
     #[test]
