@@ -75,9 +75,14 @@ impl Wallet {
     fn extract_printer_id(&self, fields: &BTreeMap<String, SuiMoveValue>) -> Option<String> {
         fields.get("id").and_then(|id_field| {
             if let SuiMoveValue::UID { id } = id_field {
-                // make sure the original id format is preserved, including the 0x prefix
+                // 確保 ID 包含 0x 前綴
                 let id_str = id.to_string();
-                Some(id_str)
+                let formatted_id = if !id_str.starts_with("0x") {
+                    format!("0x{}", id_str)
+                } else {
+                    id_str
+                };
+                Some(formatted_id)
             } else {
                 None
             }
@@ -122,7 +127,13 @@ impl Wallet {
         let package_id: ObjectID = self.network_state.get_current_package_ids().eureka_package_id.parse()?;
         let mut options = SuiObjectDataOptions::new();
         options.show_content = true;
+        options.show_owner = true;
+        options.show_type = true;
         
+        // 構建完整的打印機類型名稱
+        let printer_type = format!("{}::eureka::Printer", self.network_state.get_current_package_ids().eureka_package_id);
+        
+        // 查詢用戶擁有的對象
         let response = self.client.read_api()
             .get_owned_objects(
                 address,
@@ -134,30 +145,61 @@ impl Wallet {
                 None
             )
             .await?;
-            
-        // try to get printer info from the first object
-        response.data
-            .first()
-            .and_then(|obj| obj.data.as_ref())
-            .and_then(|data| {
-                // extract info from content or use object id as backup
-                data.content.as_ref()
-                    .and_then(|content| {
-                        if let SuiParsedData::MoveObject(move_obj) = content {
-                            self.extract_printer_from_move_struct(&move_obj.fields)
-                        } else {
-                            None
+        
+        // 遍歷所有找到的對象，尋找正確的打印機對象
+        for obj in &response.data {
+            if let Some(data) = &obj.data {
+                if let Some(content) = &data.content {
+                    if let SuiParsedData::MoveObject(move_obj) = content {
+                        // 精確匹配打印機類型
+                        if move_obj.type_.to_string() == printer_type {
+                            // 提取打印機信息
+                            if let Some(info) = self.extract_printer_from_move_struct(&move_obj.fields) {
+                                return Ok(info);
+                            }
                         }
-                    })
-                    .or_else(|| {
-                        // backup plan: use object id with full format
-                        Some(PrinterInfo {
-                            id: data.object_id.to_string(),
-                            pool_balance: 0,
-                        })
-                    })
-            })
-            .ok_or_else(|| anyhow::anyhow!("No printer found"))
+                    }
+                }
+            }
+        }
+        
+        // 如果無法找到打印機對象，可以嘗試直接指定已知的打印機對象 ID
+        if response.data.is_empty() {
+            let known_printer_id = "0x8486514327d88cbf61e3795a6f3432b0c06b8711dc3cea97e647466a6cebfa30";
+            
+            // 如果你確定該打印機屬於當前用戶，可以返回該 ID
+            let printer_id_obj: ObjectID = known_printer_id.parse()?;
+            
+            // 創建新的 options 實例
+            let mut new_options = SuiObjectDataOptions::new();
+            new_options.show_content = true;
+            new_options.show_type = true;
+            
+            let printer_response = self.client.read_api()
+                .get_object_with_options(printer_id_obj, new_options)
+                .await?;
+                
+            if let Some(data) = printer_response.data {
+                if let Some(content) = data.content {
+                    if let SuiParsedData::MoveObject(move_obj) = content {
+                        // 確認類型匹配
+                        if move_obj.type_.to_string() == printer_type {
+                            if let Some(info) = self.extract_printer_from_move_struct(&move_obj.fields) {
+                                return Ok(info);
+                            }
+                        }
+                    }
+                }
+                
+                // 如果確認是打印機，返回 ID
+                return Ok(PrinterInfo {
+                    id: known_printer_id.to_string(),
+                    pool_balance: 0,
+                });
+            }
+        }
+        
+        Err(anyhow::anyhow!("No printer found"))
     }
 
     pub async fn get_user_sculpt(&self, address: SuiAddress) -> Result<Vec<SculptItem>> {

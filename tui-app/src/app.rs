@@ -105,8 +105,12 @@ impl App {
         let sui_balance = wallet.get_sui_balance(wallet.get_active_address().await?).await?;
         let wal_balance = wallet.get_walrus_balance(wallet.get_active_address().await?).await?;
         let printer_info = match wallet.get_printer_info(wallet.get_active_address().await?).await {
-            Ok(info) => info,
-            Err(_e) => {
+            Ok(info) => {
+                println!("獲取到打印機 ID: {}", info.id);  // 添加日誌
+                info
+            },
+            Err(e) => {
+                println!("未能獲取打印機資訊: {}", e);  // 添加日誌
                 PrinterInfo {
                     id: "No Printer ID".to_string(),
                     pool_balance: 0,
@@ -193,42 +197,48 @@ impl App {
                 self.network_state.clone()
             ).await;
             
-            // handle printer_id parsing error
-            let printer_id_str = if !self.printer_id.starts_with("0x") {
-                let id_with_prefix = format!("0x{}", self.printer_id);
-                self.set_message(MessageType::Info, format!("Converting printer ID format '{}' to '{}'", self.printer_id, id_with_prefix));
-                id_with_prefix
-            } else {
-                self.printer_id.clone()
-            };
-            
-            let printer_object_id = match ObjectID::from_hex_literal(&printer_id_str) {
-                Ok(id) => id,
-                Err(e) => {
-                    self.set_message(MessageType::Error, format!("Invalid printer ID format: {} - {}", printer_id_str, e));
-                    return Ok(());
-                }
-            };
-            
-            match builder.update_printer_status(printer_object_id).await {
-                Ok(tx_digest) => {
-                    // only update UI state after transaction success
-                    self.is_online = !original_state;
+            // 重新獲取完整的打印機 ID
+            match self.wallet.get_printer_info(self.wallet.get_active_address().await?).await {
+                Ok(info) => {
+                    // 使用剛獲取的完整 ID
+                    let printer_id_str = info.id;
+                    // 更新 app 中存儲的 printer_id
+                    self.printer_id = printer_id_str.clone();
+                    self.set_message(MessageType::Info, format!("使用打印機 ID: {}", printer_id_str));
                     
-                    let status_text = if self.is_online { "ONLINE" } else { "OFFLINE" };
+                    let printer_object_id = match ObjectID::from_hex_literal(&printer_id_str) {
+                        Ok(id) => id,
+                        Err(e) => {
+                            self.set_message(MessageType::Error, format!("無效的打印機 ID 格式: {} - {}", printer_id_str, e));
+                            return Ok(());
+                        }
+                    };
                     
-                    // set success message directly
-                    self.set_message(
-                        MessageType::Success, 
-                        format!("Printer status updated to {} (Transaction ID: {})", status_text, tx_digest)
-                    );
+                    match builder.update_printer_status(printer_object_id).await {
+                        Ok(tx_digest) => {
+                            // only update UI state after transaction success
+                            self.is_online = !original_state;
+                            
+                            let status_text = if self.is_online { "ONLINE" } else { "OFFLINE" };
+                            
+                            // set success message directly
+                            self.set_message(
+                                MessageType::Success, 
+                                format!("Printer status updated to {} (Transaction ID: {})", status_text, tx_digest)
+                            );
+                        },
+                        Err(e) => {
+                            // only set error message
+                            self.set_message(MessageType::Error, format!("Failed to update printer status: {}", e));
+                            return Ok(());
+                        }
+                    };
                 },
                 Err(e) => {
-                    // only set error message
-                    self.set_message(MessageType::Error, format!("Failed to update printer status: {}", e));
+                    self.set_message(MessageType::Error, format!("未能獲取打印機信息: {}", e));
                     return Ok(());
                 }
-            };
+            }
         } else {
             // if no printer, directly update UI state
             self.is_online = !original_state;
