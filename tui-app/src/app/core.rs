@@ -169,7 +169,7 @@ impl App {
         Ok(app)
     }
 
-    // 通用訊息處理
+    // clear error and success message
     pub fn clear_error(&mut self) {
         self.error_message = None;
         self.success_message = None;
@@ -199,20 +199,19 @@ impl App {
     }
 
     pub async fn update_basic_info(&mut self) -> Result<()> {
-        // 嘗試從區塊鏈獲取最新信息
+        // try to get latest info from blockchain
         let address = self.wallet.get_active_address().await?;
         
-        // 獲取基本餘額信息
+        // get basic balance info
         self.sui_balance = self.wallet.get_sui_balance(address).await?;
         self.wal_balance = self.wallet.get_walrus_balance(address).await?;
         
-        // 獲取打印機信息
+        // get printer info
         match self.wallet.get_printer_info(address).await {
             Ok(info) => {
                 println!("Successfully got printer ID: {}", info.id);
                 self.printer_id = info.id.clone();
-                
-                // 格式化獎勵餘額
+
                 if info.pool_balance > 0 {
                     self.harvestable_rewards = format!("{:.2} SUI", info.pool_balance as f64 / 1_000_000_000.0);
                 } else {
@@ -225,11 +224,10 @@ impl App {
             }
         }
         
-        // 獲取可用模型
+        // get available models
         match self.wallet.get_user_sculpt(address).await {
             Ok(items) => {
                 self.sculpt_items = items;
-                // 重置選擇狀態
                 if !self.sculpt_items.is_empty() {
                     self.sculpt_state.select(Some(0));
                 }

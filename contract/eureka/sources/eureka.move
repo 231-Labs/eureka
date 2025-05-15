@@ -30,7 +30,7 @@ module eureka::eureka {
     /// === Errors ===
     const EPrintJobCompleted: u64 = 1;
     const EPrintJobExists: u64 = 2;
-    
+    const ENotAuthorized: u64 = 3;
 
     /// === One Time Witness ===
     public struct EUREKA has drop {}
@@ -51,6 +51,11 @@ module eureka::eureka {
         alias: String,
         online: bool,
         pool: Balance<SUI>,
+    }
+
+    public struct PrinterCap has key, store {
+        id: UID,
+        printer_id: ID,
     }
 
     /// === Events ===
@@ -114,9 +119,15 @@ module eureka::eureka {
             pool: balance::zero(),
         };
 
-        let printer_id = object::uid_to_inner(&printer.id);
 
-        transfer::public_transfer(printer, sender);
+        let printer_id = object::uid_to_inner(&printer.id);
+        let printer_cap = PrinterCap {
+            id: object::new(ctx),
+            printer_id,
+        };
+
+        transfer::public_transfer(printer_cap, sender);
+        transfer::share_object(printer);
         vec_set::insert(&mut state.printers, printer_id);
 
         event::emit(PrinterRegistered {
@@ -128,16 +139,20 @@ module eureka::eureka {
 
     // Creates a new print job and assigns it to a printer (with payment)
     public entry fun create_and_assign_print_job(
+        printer_cap: &PrinterCap,
         printer: &mut Printer,
         sculpt: &mut Sculpt,
         payment: Coin<SUI>,
         ctx: &mut TxContext,
     ) {
+        assert!(printer_cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
+
         let payment_value = coin::value(&payment);
         let payment_balance = coin::into_balance(payment);
         
         // use internal function to create print job
         create_and_assign_print_job_internal(
+            printer_cap,
             printer,
             sculpt,
             payment_balance,
@@ -148,12 +163,15 @@ module eureka::eureka {
     
     // Creates a new print job without payment
     public entry fun create_and_assign_print_job_free(
+        printer_cap: &PrinterCap,
         printer: &mut Printer,
         sculpt: &mut Sculpt,
         ctx: &mut TxContext,
     ) {
+
         // use internal function to create print job
         create_and_assign_print_job_internal(
+            printer_cap,
             printer,
             sculpt,
             balance::zero<SUI>(),
@@ -164,12 +182,15 @@ module eureka::eureka {
     
     // Internal function to create print job (used by both entry functions)
     fun create_and_assign_print_job_internal(
+        printer_cap: &PrinterCap,
         printer: &mut Printer,
         sculpt: &Sculpt,
         payment_balance: Balance<SUI>,
         payment_value: u64,
         ctx: &mut TxContext,
     ) {
+        // check if the printer cap is valid
+        assert!(printer_cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
         // check if the printer has a print job
         assert!(!dof::exists_(&printer.id, b"print_job"), EPrintJobExists);
 
@@ -199,22 +220,28 @@ module eureka::eureka {
 
     // Starts a print job and updates the printer status
     public entry fun start_print_job(
+        printer_cap: &PrinterCap,
         printer: &mut Printer,
         sculpt: &mut Sculpt,
         clock: &clock::Clock,
     ) {
+        assert!(printer_cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
+
         mutate_print_job_start_time_via_printer(printer, clock);
         print_sculpt(sculpt, clock);
     }
 
     // Completes a print job and updates the printer status
     public entry fun complete_print_job(
+        printer_cap: &PrinterCap,
         printer: &mut Printer,
         sculpt: &mut Sculpt,
         clock: &clock::Clock,
         ctx: &mut TxContext,
     ) {
-        // Check if the print job is active (not completed)
+        // check if the printer cap is valid
+        assert!(printer_cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
+        // check if the print job is active (not completed)
         assert!(!get_print_job_status_via_printer(printer), EPrintJobCompleted);
         
         // Update job status
@@ -235,11 +262,13 @@ module eureka::eureka {
 
     // Withdraws accumulated fees from a printer
     entry fun withdraw_fees(
-        // cap: &PrinterCap,
+        printer_cap: &PrinterCap,
         printer: &mut Printer,
         ctx: &mut TxContext,
     ) {
-        //assert!(cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
+        // check if the printer cap is valid    
+        assert!(printer_cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
+
         let amount = balance::value(&printer.pool);
         let coin = coin::from_balance(balance::split(&mut printer.pool, amount), ctx);
         transfer::public_transfer(coin, tx_context::sender(ctx));
@@ -249,9 +278,12 @@ module eureka::eureka {
     
     /// Updates a printer's online status
     entry fun update_printer_status(
-        // cap: &PrinterCap,
+        printer_cap: &PrinterCap,
         printer: &mut Printer,
     ) {
+        // check if the printer cap is valid
+        assert!(printer_cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
+
         printer.online = !printer.online;
         
         event::emit(PrinterStatusUpdated {
