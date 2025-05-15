@@ -29,6 +29,7 @@ module eureka::eureka {
 
     /// === Errors ===
     const EPrintJobCompleted: u64 = 1;
+    const EPrintJobExists: u64 = 2;
     
 
     /// === One Time Witness ===
@@ -169,6 +170,9 @@ module eureka::eureka {
         payment_value: u64,
         ctx: &mut TxContext,
     ) {
+        // check if the printer has a print job
+        assert!(!dof::exists_(&printer.id, b"print_job"), EPrintJobExists);
+
         let printer_id = object::uid_to_inner(&printer.id);
         let (sculpt_id, sculpt_alias, sculpt_structure) = get_sculpt_info(sculpt);
         let job = create_print_job(
@@ -195,7 +199,6 @@ module eureka::eureka {
 
     // Starts a print job and updates the printer status
     public entry fun start_print_job(
-        //_cap: &PrinterCap,
         printer: &mut Printer,
         sculpt: &mut Sculpt,
         clock: &clock::Clock,
@@ -207,15 +210,11 @@ module eureka::eureka {
 
     // Completes a print job and updates the printer status
     public entry fun complete_print_job(
-        //cap: &PrinterCap,
         printer: &mut Printer,
-        sculpt: Sculpt,
+        sculpt: &mut Sculpt,
         clock: &clock::Clock,
         ctx: &mut TxContext,
     ) {
-        // Check if the printer is authorized
-        //assert!(cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
-        
         // Check if the print job is active (not completed)
         assert!(get_print_job_status_via_printer(printer), EPrintJobCompleted);
         
@@ -232,7 +231,7 @@ module eureka::eureka {
         emit_print_job_completed_event(printer, ctx);
 
         // Archive print job to sculpt
-        archive_print_job(dof::borrow_mut(&mut printer.id, b"current_job"), sculpt);
+        archive_print_job(dof::borrow_mut(&mut printer.id, b"print_job"), sculpt, ctx);
     }
 
     // Withdraws accumulated fees from a printer
@@ -254,7 +253,6 @@ module eureka::eureka {
         // cap: &PrinterCap,
         printer: &mut Printer,
     ) {
-        //assert!(cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
         printer.online = !printer.online;
         
         event::emit(PrinterStatusUpdated {
@@ -267,27 +265,27 @@ module eureka::eureka {
     
     /// Helper function to mutate the status of a print job
     fun mutate_print_job_status_via_printer(printer: &mut Printer) {
-        mutate_print_job_status(dof::borrow_mut(&mut printer.id, b"current_job"));
+        mutate_print_job_status(dof::borrow_mut(&mut printer.id, b"print_job"));
     }
 
     // Helper function to mutate the start time of a print job
     fun mutate_print_job_start_time_via_printer(printer: &mut Printer, clock: &clock::Clock) {
-        mutate_print_job_start_time(dof::borrow_mut(&mut printer.id, b"current_job"), clock);
+        mutate_print_job_start_time(dof::borrow_mut(&mut printer.id, b"print_job"), clock);
     }
 
     // Helper function to mutate the end time of a print job
     fun mutate_print_job_end_time_via_printer(printer: &mut Printer, clock: &clock::Clock) {
-        mutate_print_job_end_time(dof::borrow_mut(&mut printer.id, b"current_job"), clock);
+        mutate_print_job_end_time(dof::borrow_mut(&mut printer.id, b"print_job"), clock);
     }
 
     // Gets print job status via printer
     fun get_print_job_status_via_printer(printer: &Printer): bool {
-        get_print_job_status(dof::borrow(&printer.id, b"current_job"))
+        get_print_job_status(dof::borrow(&printer.id, b"print_job"))
     }
 
     // Transfers print job fees to printer pool
     fun withdraw_fees_via_printer(printer: &mut Printer) {
-        let fee = extract_print_job_fees(dof::borrow_mut(&mut printer.id, b"current_job"));
+        let fee = extract_print_job_fees(dof::borrow_mut(&mut printer.id, b"print_job"));
         add_fees(printer, fee);
     }
 
@@ -323,12 +321,12 @@ module eureka::eureka {
     
     /// Gets fee amount from a print job via printer
     fun get_print_job_fees_via_printer(printer: &Printer): u64 {
-        get_print_job_fees(dof::borrow(&printer.id, b"current_job"))
+        get_print_job_fees(dof::borrow(&printer.id, b"print_job"))
     }
 
     // Gets print job ID via printer
     fun get_print_job_id_via_printer(printer: &Printer): ID {
-        get_print_job_id(dof::borrow(&printer.id, b"current_job"))
+        get_print_job_id(dof::borrow(&printer.id, b"print_job"))
     }
 
     /// === Printer Getter Functions ===

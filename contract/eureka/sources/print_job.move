@@ -2,9 +2,11 @@ module eureka::print_job {
 
     use sui::sui::SUI;
     use std::string::{ String };
-    use sui::{ balance::{ Self, Balance }, clock::{ Self } };
+    use sui::{ 
+        balance::{ Self, Balance }, 
+        clock::{ Self }
+    };
     use archimeters::sculpt::{ Sculpt };
-
     /// === Structs ===
  
     /// Represents a print job with associated properties and balance
@@ -76,10 +78,24 @@ module eureka::print_job {
 
     // Helper function to attach a print job to the original sculpt
     public(package) fun archive_print_job(
-        print_job: &mut PrintJob,
-        sculpt: Sculpt
+        print_job: &PrintJob,
+        sculpt: &mut Sculpt,
+        ctx: &mut TxContext
     ) {
-        sui::dynamic_object_field::add(&mut print_job.id, b"copy", sculpt);
+        let pr_copy = PrintJob {
+            id: object::new(ctx),
+            sculpt_alias: print_job.sculpt_alias,
+            sculpt_id: print_job.sculpt_id,
+            sculpt_structure: print_job.sculpt_structure,
+            customer: print_job.customer,
+            printer_id: print_job.printer_id,
+            is_completed: print_job.is_completed,
+            paid_amount: balance::zero<SUI>(),
+            start_time: print_job.start_time,
+            end_time: print_job.end_time,
+        };
+        
+        archimeters::sculpt::add_print_record(sculpt, pr_copy);
     }
 
     /// === Getter Functions ===
