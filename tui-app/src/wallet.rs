@@ -163,43 +163,8 @@ impl Wallet {
             }
         }
         
-        // 如果無法找到打印機對象，可以嘗試直接指定已知的打印機對象 ID
-        if response.data.is_empty() {
-            let known_printer_id = "0x8486514327d88cbf61e3795a6f3432b0c06b8711dc3cea97e647466a6cebfa30";
-            
-            // 如果你確定該打印機屬於當前用戶，可以返回該 ID
-            let printer_id_obj: ObjectID = known_printer_id.parse()?;
-            
-            // 創建新的 options 實例
-            let mut new_options = SuiObjectDataOptions::new();
-            new_options.show_content = true;
-            new_options.show_type = true;
-            
-            let printer_response = self.client.read_api()
-                .get_object_with_options(printer_id_obj, new_options)
-                .await?;
-                
-            if let Some(data) = printer_response.data {
-                if let Some(content) = data.content {
-                    if let SuiParsedData::MoveObject(move_obj) = content {
-                        // 確認類型匹配
-                        if move_obj.type_.to_string() == printer_type {
-                            if let Some(info) = self.extract_printer_from_move_struct(&move_obj.fields) {
-                                return Ok(info);
-                            }
-                        }
-                    }
-                }
-                
-                // 如果確認是打印機，返回 ID
-                return Ok(PrinterInfo {
-                    id: known_printer_id.to_string(),
-                    pool_balance: 0,
-                });
-            }
-        }
-        
-        Err(anyhow::anyhow!("No printer found"))
+        // 如果無法找到打印機對象，直接返回錯誤，用戶需要在註冊頁註冊
+        Err(anyhow::anyhow!("No printer found for this address. Please register a printer first."))
     }
 
     pub async fn get_user_sculpt(&self, address: SuiAddress) -> Result<Vec<SculptItem>> {

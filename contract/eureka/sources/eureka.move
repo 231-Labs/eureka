@@ -203,7 +203,6 @@ module eureka::eureka {
         sculpt: &mut Sculpt,
         clock: &clock::Clock,
     ) {
-        mutate_print_job_status_via_printer(printer);
         mutate_print_job_start_time_via_printer(printer, clock);
         print_sculpt(sculpt, clock);
     }
@@ -216,7 +215,7 @@ module eureka::eureka {
         ctx: &mut TxContext,
     ) {
         // Check if the print job is active (not completed)
-        assert!(get_print_job_status_via_printer(printer), EPrintJobCompleted);
+        assert!(!get_print_job_status_via_printer(printer), EPrintJobCompleted);
         
         // Update job status
         mutate_print_job_status_via_printer(printer);
