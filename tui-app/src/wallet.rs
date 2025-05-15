@@ -130,10 +130,10 @@ impl Wallet {
         options.show_owner = true;
         options.show_type = true;
         
-        // 構建完整的打印機類型名稱
+        // build full printer type name
         let printer_type = format!("{}::eureka::Printer", self.network_state.get_current_package_ids().eureka_package_id);
         
-        // 查詢用戶擁有的對象
+        // query user owned objects
         let response = self.client.read_api()
             .get_owned_objects(
                 address,
@@ -146,14 +146,14 @@ impl Wallet {
             )
             .await?;
         
-        // 遍歷所有找到的對象，尋找正確的打印機對象
+        // iterate all found objects, find correct printer object
         for obj in &response.data {
             if let Some(data) = &obj.data {
                 if let Some(content) = &data.content {
                     if let SuiParsedData::MoveObject(move_obj) = content {
-                        // 精確匹配打印機類型
+                        // exact match printer type
                         if move_obj.type_.to_string() == printer_type {
-                            // 提取打印機信息
+                            // extract printer info
                             if let Some(info) = self.extract_printer_from_move_struct(&move_obj.fields) {
                                 return Ok(info);
                             }

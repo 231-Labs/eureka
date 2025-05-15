@@ -11,6 +11,7 @@ use ratatui::{
 use std::{io, time::Duration};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use app::MessageType;
 
 mod app;
 mod constants;
@@ -19,7 +20,7 @@ mod wallet;
 mod ui;
 mod transactions;
 
-use app::{App, MessageType};
+use app::App;
 
 #[tokio::main]
 async fn main() -> Result<()> {
