@@ -163,7 +163,7 @@ impl Wallet {
             }
         }
         
-        // 如果無法找到打印機對象，直接返回錯誤，用戶需要在註冊頁註冊
+        // if no printer found, return error
         Err(anyhow::anyhow!("No printer found for this address. Please register a printer first."))
     }
 

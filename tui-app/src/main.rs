@@ -56,8 +56,40 @@ async fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     app: Arc<Mutex<App>>,
 ) -> Result<()> {
+    // retry interval
+    let mut last_update_time = std::time::Instant::now();
+    let retry_interval = std::time::Duration::from_secs(3); // 每2秒嘗試一次獲取打印機ID
+    
+    // track if printer id is acquired
+    let mut printer_id_acquired = false;
+    
     loop {
         let app_arc = Arc::clone(&app);
+        
+        // check if printer id is acquired
+        if !printer_id_acquired {
+            let should_update = {
+                let app_guard = app_arc.lock().await;
+                // only update if not registering printer and printer id is missing
+                !app_guard.is_registering_printer && 
+                app_guard.printer_id == "No Printer ID" && 
+                last_update_time.elapsed() >= retry_interval
+            };
+            
+            if should_update {
+                let mut app_guard = app_arc.lock().await;
+                // try to update basic info
+                if let Err(e) = app_guard.update_basic_info().await {
+                    println!("Failed to update basic info: {}", e);
+                } else if app_guard.printer_id != "No Printer ID" {
+                    // if successfully acquired printer id, mark as acquired
+                    printer_id_acquired = true;
+                    println!("Successfully acquired printer ID: {}", app_guard.printer_id);
+                }
+                last_update_time = std::time::Instant::now();
+            }
+        }
+        
         {
             let mut app_guard = app_arc.lock().await;
             terminal.draw(|f| ui::draw(f, &mut app_guard)).unwrap();
@@ -67,7 +99,7 @@ async fn run_app<B: ratatui::backend::Backend>(
             if let Event::Key(key) = crossterm_event::read()? {
                 let mut app_guard = app_arc.lock().await;
                 if app_guard.is_registering_printer {
-                    // 在註冊畫面時，只處理註冊相關的按鍵
+                    // only handle registration related keys on registration page
                     match key.code {
                         KeyCode::Char('q') => return Ok(()),
                         KeyCode::Esc => return Ok(()),
@@ -89,11 +121,11 @@ async fn run_app<B: ratatui::backend::Backend>(
                         _ => {}
                     }
                 } else {
-                    // 在主畫面時，處理所有按鍵
+                    // handle all keys on main page
                     match key.code {
                         KeyCode::Char('q') => return Ok(()),
                         KeyCode::Esc => return Ok(()),
-                        // 二次確認相關的按鍵
+                        // confirm related keys
                         KeyCode::Char('y') => {
                             if app_guard.is_confirming {
                                 app_guard.confirm_toggle().await?;
@@ -112,7 +144,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 app_guard.start_network_switch();
                             }
                         }
-                        // 功能按鍵
+                        // feature keys
                         KeyCode::Char('o') => {
                             if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
                                 app_guard.start_toggle_confirm();
@@ -140,7 +172,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 App::handle_model_selection(Arc::clone(&app_arc), true).await?;
                             }
                         }
-                        // 網絡切換
+                        // network switch
                         KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3') => {
                             if app_guard.is_switching_network {
                                 let network_index = match key.code {
@@ -153,7 +185,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 app_guard.update_network().await?;
                             }
                         }
-                        // 列表導航
+                        // list navigation
                         KeyCode::Up => {
                             app_guard.previous_item();
                         }
@@ -161,7 +193,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                             app_guard.next_item();
                         }
                         _ => {
-                            // 清除任何消息
+                            // clear any messages
                             app_guard.clear_error();
                             app_guard.success_message = None;
                         }

@@ -128,7 +128,7 @@ impl App {
             }]
         };
         
-        // 格式化池子餘額為 SUI TODO: Test this
+        // format pool balance to SUI
         let pool_balance_formatted = if printer_info.pool_balance > 0 {
             format!("{:.2} SUI", printer_info.pool_balance as f64 / 1_000_000_000.0)
         } else {
@@ -506,8 +506,11 @@ impl App {
                         }
                     };
                 } else if matches!(self.registration_status, RegistrationStatus::Success(_)) {
-                    // Only exit registration page when Enter is pressed in success state
+                    // 立即退出註冊頁面，讓UI繼續刷新
                     self.is_registering_printer = false;
+                    
+                    // 在下一個循環更新應用程序狀態
+                    self.update_basic_info().await?;
                 }
             }
             '\x08' | '\x7f' => {
@@ -817,21 +820,48 @@ impl App {
         Ok(())
     }
 
-    // pub async fn get_wallet_balance(&self) -> Result<u128> {
-    //     if let Some(wallet) = &self.wallet {
-    //         let address = wallet.get_active_address().await?;
-    //         wallet.get_sui_balance(address).await
-    //     } else {
-    //         Err(anyhow::anyhow!("Wallet not initialized"))
-    //     }
-    // }
-
-    // pub async fn update_wallet_address(&mut self) -> Result<()> {
-    //     if let Some(wallet) = &self.wallet {
-    //         self.wallet_address = wallet.get_active_address().await?.to_string();
-    //         Ok(())
-    //     } else {
-    //         Err(anyhow::anyhow!("Wallet not initialized"))
-    //     }
-    // }
+    pub async fn update_basic_info(&mut self) -> Result<()> {
+        // 嘗試從區塊鏈獲取最新信息
+        let address = self.wallet.get_active_address().await?;
+        
+        // 獲取基本餘額信息
+        self.sui_balance = self.wallet.get_sui_balance(address).await?;
+        self.wal_balance = self.wallet.get_walrus_balance(address).await?;
+        
+        // 獲取打印機信息
+        match self.wallet.get_printer_info(address).await {
+            Ok(info) => {
+                println!("Successfully got printer ID: {}", info.id);
+                self.printer_id = info.id.clone();
+                
+                // 格式化獎勵餘額
+                if info.pool_balance > 0 {
+                    self.harvestable_rewards = format!("{:.2} SUI", info.pool_balance as f64 / 1_000_000_000.0);
+                } else {
+                    self.harvestable_rewards = "0.00 SUI".to_string();
+                }
+            }
+            Err(e) => {
+                println!("Failed to get printer ID: {}", e);
+                self.set_message(MessageType::Error, format!("Failed to get printer ID: {}", e));
+            }
+        }
+        
+        // 獲取可用模型
+        match self.wallet.get_user_sculpt(address).await {
+            Ok(items) => {
+                self.sculpt_items = items;
+                // 重置選擇狀態
+                if !self.sculpt_items.is_empty() {
+                    self.sculpt_state.select(Some(0));
+                }
+            }
+            Err(e) => {
+                println!("Failed to load 3D models: {}", e);
+                self.set_message(MessageType::Error, format!("Failed to load 3D models: {}", e));
+            }
+        }
+        
+        Ok(())
+    }
 } 
