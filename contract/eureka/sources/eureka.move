@@ -28,7 +28,6 @@ module eureka::eureka {
     };
 
     /// === Errors ===
-    /// const ENotAuthorized: u64 = 1;
     const EPrintJobCompleted: u64 = 1;
     
 
@@ -52,12 +51,6 @@ module eureka::eureka {
         online: bool,
         pool: Balance<SUI>,
     }
-
-    // // Capability object that authorizes printer operations
-    // public struct PrinterCap has key, store {
-    //     id: UID,
-    //     printer_id: ID,
-    // }
 
     /// === Events ===
      
@@ -132,7 +125,7 @@ module eureka::eureka {
         });
     }
 
-    // Creates a new print job and assigns it to a printer
+    // Creates a new print job and assigns it to a printer (with payment)
     public entry fun create_and_assign_print_job(
         printer: &mut Printer,
         sculpt: &mut Sculpt,
@@ -141,6 +134,41 @@ module eureka::eureka {
     ) {
         let payment_value = coin::value(&payment);
         let payment_balance = coin::into_balance(payment);
+        
+        // use internal function to create print job
+        create_and_assign_print_job_internal(
+            printer,
+            sculpt,
+            payment_balance,
+            payment_value,
+            ctx
+        );
+    }
+    
+    // Creates a new print job without payment
+    public entry fun create_and_assign_print_job_free(
+        printer: &mut Printer,
+        sculpt: &mut Sculpt,
+        ctx: &mut TxContext,
+    ) {
+        // use internal function to create print job
+        create_and_assign_print_job_internal(
+            printer,
+            sculpt,
+            balance::zero<SUI>(),
+            0,
+            ctx
+        );
+    }
+    
+    // Internal function to create print job (used by both entry functions)
+    fun create_and_assign_print_job_internal(
+        printer: &mut Printer,
+        sculpt: &Sculpt,
+        payment_balance: Balance<SUI>,
+        payment_value: u64,
+        ctx: &mut TxContext,
+    ) {
         let printer_id = object::uid_to_inner(&printer.id);
         let (sculpt_id, sculpt_alias, sculpt_structure) = get_sculpt_info(sculpt);
         let job = create_print_job(
