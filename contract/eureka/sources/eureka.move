@@ -139,20 +139,16 @@ module eureka::eureka {
 
     // Creates a new print job and assigns it to a printer (with payment)
     public entry fun create_and_assign_print_job(
-        printer_cap: &PrinterCap,
         printer: &mut Printer,
         sculpt: &mut Sculpt,
         payment: Coin<SUI>,
         ctx: &mut TxContext,
     ) {
-        assert!(printer_cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
-
         let payment_value = coin::value(&payment);
         let payment_balance = coin::into_balance(payment);
         
         // use internal function to create print job
         create_and_assign_print_job_internal(
-            printer_cap,
             printer,
             sculpt,
             payment_balance,
@@ -163,7 +159,6 @@ module eureka::eureka {
     
     // Creates a new print job without payment
     public entry fun create_and_assign_print_job_free(
-        printer_cap: &PrinterCap,
         printer: &mut Printer,
         sculpt: &mut Sculpt,
         ctx: &mut TxContext,
@@ -171,7 +166,6 @@ module eureka::eureka {
 
         // use internal function to create print job
         create_and_assign_print_job_internal(
-            printer_cap,
             printer,
             sculpt,
             balance::zero<SUI>(),
@@ -182,15 +176,12 @@ module eureka::eureka {
     
     // Internal function to create print job (used by both entry functions)
     fun create_and_assign_print_job_internal(
-        printer_cap: &PrinterCap,
         printer: &mut Printer,
         sculpt: &Sculpt,
         payment_balance: Balance<SUI>,
         payment_value: u64,
         ctx: &mut TxContext,
     ) {
-        // check if the printer cap is valid
-        assert!(printer_cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
         // check if the printer has a print job
         assert!(!dof::exists_(&printer.id, b"print_job"), EPrintJobExists);
 
