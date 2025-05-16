@@ -6,10 +6,10 @@ use sui_sdk::SuiClient;
 use std::sync::Arc;
 use std::vec::Vec;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum TaskStatus {
-    Printing(u8),
+    Printing,
     Completed,
 }
 
@@ -17,6 +17,12 @@ pub enum TaskStatus {
 pub struct PrintTask {
     pub id: String,
     pub name: String,
+    pub sculpt_id: String,
+    pub sculpt_structure: String,
+    pub customer: String,
+    pub paid_amount: u64,
+    pub start_time: Option<u64>,
+    pub end_time: Option<u64>,
     pub status: TaskStatus,
 }
 
@@ -99,11 +105,11 @@ impl App {
         let wal_balance = wallet.get_walrus_balance(wallet.get_active_address().await?).await?;
         let printer_info = match wallet.get_printer_info(wallet.get_active_address().await?).await {
             Ok(info) => {
-                println!("獲取到打印機 ID: {}", info.id);  // 添加日誌
+                //println!("獲取到打印機 ID: {}", info.id);  // 添加日誌
                 info
             },
             Err(e) => {
-                println!("未能獲取打印機資訊: {}", e);  // 添加日誌
+                //println!("未能獲取打印機資訊: {}", e);  // 添加日誌
                 PrinterInfo {
                     id: "No Printer ID".to_string(),
                     pool_balance: 0,
@@ -135,7 +141,30 @@ impl App {
             printer_id: printer_info.id.clone(),
             is_online: false,
             sculpt_state: ListState::default(),
-            tasks: Vec::new(),
+            tasks: vec![
+                PrintTask {
+                    id: "task_001".to_string(),
+                    name: "Benchy 3D".to_string(),
+                    sculpt_id: "0x123...abc".to_string(),
+                    sculpt_structure: "Standard".to_string(),
+                    customer: "0x598...fbd".to_string(),
+                    paid_amount: 1_000_000_000, // 1 SUI
+                    start_time: Some(1709856000), // Unix timestamp
+                    end_time: None,
+                    status: TaskStatus::Printing,
+                },
+                PrintTask {
+                    id: "task_002".to_string(),
+                    name: "Calibration Cube".to_string(),
+                    sculpt_id: "0x456...def".to_string(),
+                    sculpt_structure: "Basic".to_string(),
+                    customer: "0x598...fbd".to_string(),
+                    paid_amount: 500_000_000, // 0.5 SUI
+                    start_time: Some(1709852400),
+                    end_time: Some(1709856000),
+                    status: TaskStatus::Completed,
+                },
+            ],
             tasks_state: ListState::default(),
             is_confirming: false,
             is_harvesting: false,
@@ -233,7 +262,7 @@ impl App {
                 }
             }
             Err(e) => {
-                println!("Failed to load 3D models: {}", e);
+                // println!("Failed to load 3D models: {}", e);
                 self.set_message(MessageType::Error, format!("Failed to load 3D models: {}", e));
             }
         }

@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::app::{App, RegistrationStatus, MessageType};
+use crate::app::{App, RegistrationStatus, MessageType, TaskStatus};
 use crate::constants::{EUREKA_FRAMES, BUILD_ON_SUI};
 use textwrap;
 
@@ -538,14 +538,33 @@ fn draw_main(f: &mut Frame, app: &mut App) {
         // 在線狀態顯示任務列表
         let completed_tasks: Vec<ListItem> = app.tasks
             .iter()
-            .filter(|task| matches!(task.status, crate::app::TaskStatus::Completed))
+            .filter(|task| matches!(task.status, TaskStatus::Completed))
             .map(|task| {
-                let status_text = match task.status {
-                    crate::app::TaskStatus::Printing(progress) => format!("[{}%] {}", progress, task.name),
-                    crate::app::TaskStatus::Completed => format!("✓ {}", task.name),
+                let end_time = task.end_time.unwrap_or_default();
+                let end_time_str = if end_time > 0 {
+                    let dt = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(end_time);
+                    if let Ok(datetime) = dt.duration_since(UNIX_EPOCH) {
+                        format!("{:02}:{:02}", 
+                            (datetime.as_secs() / 3600) % 24,
+                            (datetime.as_secs() / 60) % 60)
+                    } else {
+                        "??:??".to_string()
+                    }
+                } else {
+                    "??:??".to_string()
                 };
-                ListItem::new(format!("{} - {}", task.id, status_text))
-                    .style(Style::default().fg(accent_color))
+
+                ListItem::new(Line::from(vec![
+                    Span::styled("[", Style::default().fg(dim_color)),
+                    Span::styled(end_time_str, Style::default().fg(Color::Cyan)),
+                    Span::styled("] ", Style::default().fg(dim_color)),
+                    Span::styled(task.name.clone(), Style::default().fg(secondary_color)),
+                    Span::styled(" - ", Style::default().fg(dim_color)),
+                    Span::styled(
+                        format!("{:.2} SUI", task.paid_amount as f64 / 1_000_000_000.0),
+                        Style::default().fg(Color::Green),
+                    ),
+                ]))
             })
             .collect();
 
@@ -570,7 +589,7 @@ fn draw_main(f: &mut Frame, app: &mut App) {
             .collect();
         let sculpt_list = List::new(sculpt_items)
             .block(Block::default()
-                .title("3D MODELS")
+                .title(" MY SCULPTS ")
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(primary_color)))
@@ -581,111 +600,168 @@ fn draw_main(f: &mut Frame, app: &mut App) {
         f.render_stateful_widget(sculpt_list, left_chunks[5], &mut app.sculpt_state);
     }
 
-    // 右側內容區
-    let right_block = Block::default()
-        .title("CONTENT")
+    // 右側區域佈局
+    let right_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(6),   // 訊息展示區增加到 6 行高度
+            Constraint::Length(18),  // 主要列印任務狀態
+            Constraint::Min(0),      // 底部區域
+        ])
+        .split(content_layout[1]);
+
+    // 訊息展示區域
+    let message_block = Block::default()
+        .title(" MESSAGE ")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(primary_color));
 
-    let right_area = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),  // 錯誤訊息區域
-            Constraint::Length(3),  // 機器狀態區域
-            Constraint::Min(0),     // 其他內容
-        ])
-        .split(content_layout[1]);
-
-    f.render_widget(right_block, content_layout[1]);
-
-    // 錯誤訊息區域
     if let Some(error) = &app.error_message {
-        let (style, title) = match app.message_type {
-            MessageType::Error => (
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                "ERROR"
-            ),
-            MessageType::Info => (
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                "INFO"
-            ),
-            MessageType::Success => (
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-                "SUCCESS"
-            ),
-        };
-
-        let message_block = Block::default()
-            .title(title)
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(style);
-
         // 計算可用寬度（減去邊框和邊距）
-        let available_width = right_area[0].width.saturating_sub(4);
-        
-        // 將錯誤訊息按可用寬度換行
+        let available_width = right_chunks[0].width.saturating_sub(4);
         let wrapped_text = textwrap::wrap(error, available_width as usize)
-            .into_iter()
-            .map(|line| Line::from(Span::styled(line, style)))
-            .collect::<Vec<_>>();
-
-        // 根據換行後的內容調整高度
-        let message_height = wrapped_text.len() as u16;
-        let message_area = Rect::new(
-            right_area[0].x,
-            right_area[0].y,
-            right_area[0].width,
-            message_height + 2, // 加上邊框的高度
-        );
-
-        f.render_widget(
-            Paragraph::new(wrapped_text)
-                .block(message_block)
-                .alignment(Alignment::Left),
-            message_area,
-        );
-    }
-
-    // 成功訊息區域
-    if let Some(success) = &app.success_message {
-        let message_block = Block::default()
-            .title("SUCCESS")
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Green));
-
-        // 計算可用寬度（減去邊框和邊距）
-        let available_width = right_area[0].width.saturating_sub(4);
+            .join("\n");
         
-        // 將成功訊息按可用寬度換行
+        let message_text = Paragraph::new(wrapped_text)
+            .style(Style::default().fg(Color::Red))
+            .alignment(Alignment::Left)
+            .block(message_block);
+        f.render_widget(message_text, right_chunks[0]);
+    } else if let Some(success) = &app.success_message {
+        // 計算可用寬度（減去邊框和邊距）
+        let available_width = right_chunks[0].width.saturating_sub(4);
         let wrapped_text = textwrap::wrap(success, available_width as usize)
-            .into_iter()
-            .map(|line| Line::from(Span::styled(
-                line,
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-            )))
-            .collect::<Vec<_>>();
-
-        // 根據換行後的內容調整高度
-        let message_height = wrapped_text.len() as u16;
-        let message_area = Rect::new(
-            right_area[0].x,
-            right_area[0].y,
-            right_area[0].width,
-            message_height + 2, // 加上邊框的高度
-        );
-
-        f.render_widget(
-            Paragraph::new(wrapped_text)
-                .block(message_block)
-                .alignment(Alignment::Left),
-            message_area,
-        );
+            .join("\n");
+        
+        let message_text = Paragraph::new(wrapped_text)
+            .style(Style::default().fg(Color::Green))
+            .alignment(Alignment::Left)
+            .block(message_block);
+        f.render_widget(message_text, right_chunks[0]);
+    } else {
+        // 無訊息時只顯示邊框
+        f.render_widget(message_block, right_chunks[0]);
     }
+
+    // 主要列印任務狀態區域
+    let active_task = app.tasks.iter()
+        .find(|task| matches!(task.status, TaskStatus::Printing));
+    
+    if let Some(task) = active_task {
+        let task_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Thick)
+            .title(" ACTIVE PRINT JOB ")
+            .title_alignment(Alignment::Center)
+            .border_style(Style::default().fg(primary_color));
+
+        let current_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let elapsed_time = task.start_time
+            .map(|start| current_time.saturating_sub(start))
+            .unwrap_or(0);
+        
+        let elapsed_hours = elapsed_time / 3600;
+        let elapsed_minutes = (elapsed_time % 3600) / 60;
+
+        let task_info = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::raw("╭─"),
+                Span::styled("MODEL", Style::default().fg(highlight_color)),
+                Span::raw("─╮"),
+            ]).alignment(Alignment::Center),
+            Line::from(vec![
+                Span::styled(&task.name, Style::default().fg(secondary_color).add_modifier(Modifier::BOLD)),
+            ]).alignment(Alignment::Center),
+            Line::from(vec![
+                Span::raw("╰"),
+                Span::styled("──────", Style::default().fg(dim_color)),
+                Span::raw("╯"),
+            ]).alignment(Alignment::Center),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("SCULPT ID: ", Style::default().fg(dim_color)),
+                Span::styled(&task.sculpt_id, Style::default().fg(secondary_color)),
+            ]).alignment(Alignment::Center),
+            Line::from(vec![
+                Span::styled("CUSTOMER: ", Style::default().fg(dim_color)),
+                Span::styled(&task.customer, Style::default().fg(secondary_color)),
+            ]).alignment(Alignment::Center),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("◈ ", Style::default().fg(highlight_color)),
+                Span::styled(
+                    format!("{:.2} SUI", task.paid_amount as f64 / 1_000_000_000.0),
+                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                ),
+                Span::styled(" ◈", Style::default().fg(highlight_color)),
+            ]).alignment(Alignment::Center),
+            Line::from(vec![
+                Span::styled("ELAPSED: ", Style::default().fg(dim_color)),
+                Span::styled(
+                    format!("{:02}:{:02}", elapsed_hours, elapsed_minutes),
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                ),
+            ]).alignment(Alignment::Center),
+            Line::from(""),
+            Line::from(""),
+            Line::from(""),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("▓▓▓ ", Style::default().fg(highlight_color)),
+                Span::styled("PRINTING", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(" ▓▓▓", Style::default().fg(highlight_color)),
+            ]).alignment(Alignment::Center),
+        ];
+
+        let task_widget = Paragraph::new(task_info)
+            .style(Style::default())
+            .alignment(Alignment::Center)
+            .block(task_block);
+
+        f.render_widget(task_widget, right_chunks[1]);
+    } else {
+        // 無活動任務時的顯示
+        let no_task_text = vec![
+            Line::from(vec![
+                Span::styled("◢ ", Style::default().fg(dim_color)),
+                Span::styled("PRINTER IDLE", Style::default().fg(secondary_color)),
+                Span::styled(" ◣", Style::default().fg(dim_color)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("STATUS: ", Style::default().fg(dim_color)),
+                Span::styled("□ STANDBY", Style::default().fg(Color::Yellow)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Press ", Style::default().fg(dim_color)),
+                Span::styled("P", Style::default().fg(highlight_color)),
+                Span::styled(" to start new print job", Style::default().fg(dim_color)),
+            ]),
+        ];
+        let no_task_widget = Paragraph::new(no_task_text)
+            .style(Style::default())
+            .alignment(Alignment::Center)
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(dim_color)));
+        f.render_widget(no_task_widget, right_chunks[1]);
+    }
+
+    // 底部區域（原 COMPLETED JOBS 區域）
+    let bottom_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(primary_color));
+
+    f.render_widget(bottom_block, right_chunks[2]);
 
     // 底部控制項
     let help_block = Block::default()
