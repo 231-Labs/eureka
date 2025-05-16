@@ -75,7 +75,7 @@ impl Wallet {
     fn extract_printer_id(&self, fields: &BTreeMap<String, SuiMoveValue>) -> Option<String> {
         fields.get("id").and_then(|id_field| {
             if let SuiMoveValue::UID { id } = id_field {
-                // 確保 ID 包含 0x 前綴
+                // ensure ID has 0x prefix
                 let id_str = id.to_string();
                 let formatted_id = if !id_str.starts_with("0x") {
                     format!("0x{}", id_str)
@@ -93,7 +93,7 @@ impl Wallet {
     fn extract_printer_id_from_cap(&self, fields: &BTreeMap<String, SuiMoveValue>) -> Option<String> {
         fields.get("printer_id").and_then(|id_field| {
             if let SuiMoveValue::Address(id) = id_field {
-                // 確保 ID 包含 0x 前綴
+                // ensure ID has 0x prefix
                 let id_str = id.to_string();
                 let formatted_id = if !id_str.starts_with("0x") {
                     format!("0x{}", id_str)
@@ -148,7 +148,7 @@ impl Wallet {
         options.show_owner = true;
         options.show_type = true;
         
-        // 步驟1: 先尋找用戶持有的 PrinterCap
+        // step 1: find user owned PrinterCap
         let printercap_type = format!("{}::eureka::PrinterCap", self.network_state.get_current_package_ids().eureka_package_id);
         
         // query user owned objects
@@ -164,32 +164,33 @@ impl Wallet {
             )
             .await?;
         
-        // 尋找並提取 PrinterCap 中的 printer_id
-        let mut printer_id_from_cap = None;
-        for obj in &response.data {
-            if let Some(data) = &obj.data {
-                if let Some(content) = &data.content {
-                    if let SuiParsedData::MoveObject(move_obj) = content {
-                        // 確認是否為 PrinterCap 物件
-                        if move_obj.type_.to_string() == printercap_type {
-                            if let SuiMoveStruct::WithFields(fields) = &move_obj.fields {
-                                printer_id_from_cap = self.extract_printer_id_from_cap(fields);
-                                if printer_id_from_cap.is_some() {
-                                    break;
+        // find and extract printer_id from PrinterCap
+        let printer_id_from_cap = response.data.iter()
+            .filter_map(|obj| {
+                // extract MoveObject from SuiObjectResponse
+                obj.data.as_ref()
+                    .and_then(|data| data.content.as_ref())
+                    .and_then(|content| {
+                        if let SuiParsedData::MoveObject(move_obj) = content {
+                            // check if it is PrinterCap type
+                            if move_obj.type_.to_string() == printercap_type {
+                                if let SuiMoveStruct::WithFields(fields) = &move_obj.fields {
+                                    // extract printer_id
+                                    return self.extract_printer_id_from_cap(fields);
                                 }
                             }
                         }
-                    }
-                }
-            }
-        }
+                        None
+                    })
+            })
+            .next(); // only first match result
         
-        // 如果找不到 PrinterCap，返回錯誤
+        // if no PrinterCap found, return error
         let printer_id = printer_id_from_cap.ok_or_else(|| 
             anyhow!("No PrinterCap found for this address. Please register a printer first.")
         )?;
         
-        // 步驟2: 使用獲取到的 printer_id 查詢共享的 Printer 物件
+        // step 2: query shared Printer object using printer_id
         let printer_object_id = ObjectID::from_hex_literal(&printer_id)
             .map_err(|e| anyhow!("Invalid printer ID format: {}", e))?;
             
@@ -207,7 +208,7 @@ impl Wallet {
             }
         }
         
-        // 如果找不到對應的 Printer 物件，返回錯誤
+        // if no corresponding Printer object found, return error
         Err(anyhow!("PrinterCap found but corresponding Printer object not found."))
     }
 

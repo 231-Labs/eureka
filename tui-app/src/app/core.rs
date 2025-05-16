@@ -209,7 +209,7 @@ impl App {
         // get printer info
         match self.wallet.get_printer_info(address).await {
             Ok(info) => {
-                println!("Successfully got printer ID: {}", info.id);
+                // println!("Successfully got printer ID: {}", info.id);
                 self.printer_id = info.id.clone();
 
                 if info.pool_balance > 0 {
@@ -219,7 +219,7 @@ impl App {
                 }
             }
             Err(e) => {
-                println!("Failed to get printer ID: {}", e);
+                // println!("Failed to get printer ID: {}", e);
                 self.set_message(MessageType::Error, format!("Failed to get printer ID: {}", e));
             }
         }
