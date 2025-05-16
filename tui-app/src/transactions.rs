@@ -268,9 +268,43 @@ impl TransactionBuilder {
     /// Update printer status
     pub async fn update_printer_status(
         &self,
+        printer_cap_id: ObjectID,
         printer_id: ObjectID,
     ) -> Result<String> {
-        // check printer object info
+        // get PrinterCap object information
+        let cap_response = self.executor.sui_client
+            .read_api()
+            .get_object_with_options(printer_cap_id, SuiObjectDataOptions {
+                show_owner: true,
+                show_content: true,
+                show_display: false,
+                show_bcs: false,
+                show_storage_rebate: false,
+                show_previous_transaction: false,
+                show_type: true,
+            })
+            .await?;
+        
+        let cap_data = cap_response.data
+            .ok_or_else(|| anyhow!("PrinterCap object not found"))?;
+            
+        // 確保 PrinterCap 屬於發送者
+        if let Some(Owner::AddressOwner(addr)) = cap_data.owner {
+            if addr != self.executor.sender {
+                return Err(anyhow!("PrinterCap is owned by a different address"));
+            }
+        } else {
+            return Err(anyhow!("PrinterCap has an invalid ownership type"));
+        }
+        
+        // 創建 PrinterCap 參數
+        let cap_arg = CallArg::Object(ObjectArg::ImmOrOwnedObject((
+            printer_cap_id,
+            cap_data.version,
+            cap_data.digest,
+        )));
+        
+        // 獲取 Printer 對象信息
         let object_response = self.executor.sui_client
             .read_api()
             .get_object_with_options(printer_id, SuiObjectDataOptions {
@@ -287,45 +321,33 @@ impl TransactionBuilder {
         let object_data = object_response.data
             .ok_or_else(|| anyhow!("Printer object not found"))?;
         
-        // check object owner
+        // 檢查對象所有權
         let owner = object_data.owner
             .ok_or_else(|| anyhow!("Printer object has no owner information"))?;
         
-        // create argument for object type
+        // 創建 Printer 參數
         let printer_arg = match owner {
-            Owner::AddressOwner(addr) => {
-                if addr != self.executor.sender {
-                    return Err(anyhow!("Printer is owned by a different address"));
-                }
-                
-                // use ImmOrOwnedObject type for argument
-                CallArg::Object(ObjectArg::ImmOrOwnedObject((
-                    printer_id,
-                    object_data.version,
-                    object_data.digest,
-                )))
-            },
             Owner::Shared { initial_shared_version } => {
-                // use SharedObject type for argument
+                // 使用 SharedObject 類型參數
                 CallArg::Object(ObjectArg::SharedObject {
                     id: printer_id,
                     initial_shared_version,
                     mutable: true,
                 })
             },
-            _ => return Err(anyhow!("Printer has an unsupported ownership type")),
+            _ => return Err(anyhow!("Printer should be a shared object")),
         };
         
-        // get package id
+        // 獲取包 ID
         let package_id = ObjectID::from_hex_literal(&self.network_state.get_current_package_ids().eureka_package_id)?;
         
-        // execute move call
+        // 執行 move 調用
         let tx_digest = self.executor.execute_move_call(
             package_id,
             "eureka",
             "update_printer_status",
             vec![],
-            vec![printer_arg],
+            vec![cap_arg, printer_arg],
             None,
         ).await?;
         

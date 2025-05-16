@@ -141,54 +141,67 @@ impl Wallet {
         }
     }
 
-    pub async fn get_printer_info(&self, address: SuiAddress) -> Result<PrinterInfo> {
+    // 獲取用戶的 PrinterCap 和其中的 printer_id
+    pub async fn get_printer_cap_info(&self, address: SuiAddress) -> Result<(String, String)> {
         let package_id: ObjectID = self.network_state.get_current_package_ids().eureka_package_id.parse()?;
         let mut options = SuiObjectDataOptions::new();
         options.show_content = true;
         options.show_owner = true;
         options.show_type = true;
         
-        // step 1: find user owned PrinterCap
+        // 查詢 PrinterCap 類型
         let printercap_type = format!("{}::eureka::PrinterCap", self.network_state.get_current_package_ids().eureka_package_id);
         
-        // query user owned objects
+        // 查詢用戶擁有的物件
         let response = self.client.read_api()
             .get_owned_objects(
                 address,
                 Some(SuiObjectResponseQuery::new(
                     Some(SuiObjectDataFilter::Package(package_id)),
-                    Some(options.clone())
+                    Some(options)
                 )),
                 None,
                 None
             )
             .await?;
         
-        // find and extract printer_id from PrinterCap
-        let printer_id_from_cap = response.data.iter()
+        // 尋找 PrinterCap 物件並提取信息
+        let cap_info = response.data.iter()
             .filter_map(|obj| {
-                // extract MoveObject from SuiObjectResponse
                 obj.data.as_ref()
                     .and_then(|data| data.content.as_ref())
                     .and_then(|content| {
                         if let SuiParsedData::MoveObject(move_obj) = content {
-                            // check if it is PrinterCap type
                             if move_obj.type_.to_string() == printercap_type {
                                 if let SuiMoveStruct::WithFields(fields) = &move_obj.fields {
-                                    // extract printer_id
-                                    return self.extract_printer_id_from_cap(fields);
+                                    let cap_id = self.extract_cap_id(fields)?;
+                                    let printer_id = self.extract_printer_id_from_cap(fields)?;
+                                    return Some((cap_id, printer_id));
                                 }
                             }
                         }
                         None
                     })
             })
-            .next(); // only first match result
+            .next();
         
-        // if no PrinterCap found, return error
-        let printer_id = printer_id_from_cap.ok_or_else(|| 
-            anyhow!("No PrinterCap found for this address. Please register a printer first.")
-        )?;
+        // 如果找不到 PrinterCap，返回錯誤
+        cap_info.ok_or_else(|| anyhow!("No PrinterCap found for this address. Please register a printer first."))
+    }
+    
+    // 獲取用戶的 PrinterCap ID
+    pub async fn get_printer_cap_id(&self, address: SuiAddress) -> Result<String> {
+        let (cap_id, _) = self.get_printer_cap_info(address).await?;
+        Ok(cap_id)
+    }
+
+    pub async fn get_printer_info(&self, address: SuiAddress) -> Result<PrinterInfo> {
+        let (_, printer_id) = self.get_printer_cap_info(address).await?;
+        
+        let mut options = SuiObjectDataOptions::new();
+        options.show_content = true;
+        options.show_owner = true;
+        options.show_type = true;
         
         // step 2: query shared Printer object using printer_id
         let printer_object_id = ObjectID::from_hex_literal(&printer_id)
@@ -281,5 +294,22 @@ impl Wallet {
                     _ => None,
                 }
             })
+    }
+
+    fn extract_cap_id(&self, fields: &BTreeMap<String, SuiMoveValue>) -> Option<String> {
+        fields.get("id").and_then(|id_field| {
+            if let SuiMoveValue::UID { id } = id_field {
+                // ensure ID has 0x prefix
+                let id_str = id.to_string();
+                let formatted_id = if !id_str.starts_with("0x") {
+                    format!("0x{}", id_str)
+                } else {
+                    id_str
+                };
+                Some(formatted_id)
+            } else {
+                None
+            }
+        })
     }
 } 

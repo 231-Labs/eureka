@@ -28,13 +28,15 @@ impl App {
                 self.network_state.clone()
             ).await;
             
-            // get printer info
-            match self.wallet.get_printer_info(self.wallet.get_active_address().await?).await {
+            // get printer info and printer cap
+            let address = self.wallet.get_active_address().await?;
+            match self.wallet.get_printer_info(address).await {
                 Ok(info) => {
                     let printer_id_str = info.id;
                     self.printer_id = printer_id_str.clone();
                     self.set_message(MessageType::Info, format!("Using printer ID: {}", printer_id_str));
                     
+                    // 將 printer_id 轉為 ObjectID
                     let printer_object_id = match ObjectID::from_hex_literal(&printer_id_str) {
                         Ok(id) => id,
                         Err(e) => {
@@ -43,25 +45,44 @@ impl App {
                         }
                     };
                     
-                    match builder.update_printer_status(printer_object_id).await {
-                        Ok(tx_digest) => {
-                            // only update UI state after transaction success
-                            self.is_online = !original_state;
+                    // 獲取 PrinterCap 對象 ID
+                    match self.wallet.get_printer_cap_id(address).await {
+                        Ok(cap_id) => {
+                            // 將 PrinterCap 的 ID 轉為 ObjectID
+                            let printer_cap_id = match ObjectID::from_hex_literal(&cap_id) {
+                                Ok(id) => id,
+                                Err(e) => {
+                                    self.set_message(MessageType::Error, format!("Invalid PrinterCap ID format: {} - {}", cap_id, e));
+                                    return Ok(());
+                                }
+                            };
                             
-                            let status_text = if self.is_online { "ONLINE" } else { "OFFLINE" };
-                            
-                            // set success message directly
-                            self.set_message(
-                                MessageType::Success, 
-                                format!("Printer status updated to {} (Transaction ID: {})", status_text, tx_digest)
-                            );
+                            // 調用更新狀態的交易（傳遞 PrinterCap ID 和 Printer ID）
+                            match builder.update_printer_status(printer_cap_id, printer_object_id).await {
+                                Ok(tx_digest) => {
+                                    // only update UI state after transaction success
+                                    self.is_online = !original_state;
+                                    
+                                    let status_text = if self.is_online { "ONLINE" } else { "OFFLINE" };
+                                    
+                                    // set success message directly
+                                    self.set_message(
+                                        MessageType::Success, 
+                                        format!("Printer status updated to {} (Transaction ID: {})", status_text, tx_digest)
+                                    );
+                                },
+                                Err(e) => {
+                                    // only set error message
+                                    self.set_message(MessageType::Error, format!("Failed to update printer status: {}", e));
+                                    return Ok(());
+                                }
+                            }
                         },
                         Err(e) => {
-                            // only set error message
-                            self.set_message(MessageType::Error, format!("Failed to update printer status: {}", e));
+                            self.set_message(MessageType::Error, format!("Failed to get PrinterCap ID: {}", e));
                             return Ok(());
                         }
-                    };
+                    }
                 },
                 Err(e) => {
                     self.set_message(MessageType::Error, format!("Failed to get printer info: {}", e));
