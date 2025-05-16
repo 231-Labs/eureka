@@ -2,7 +2,7 @@ use std::{
     collections::BTreeMap,
     sync::Arc,
 };
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use sui_sdk::{
     rpc_types::{
         SuiMoveStruct,
@@ -89,6 +89,24 @@ impl Wallet {
         })
     }
     
+    // extract printer_id from PrinterCap
+    fn extract_printer_id_from_cap(&self, fields: &BTreeMap<String, SuiMoveValue>) -> Option<String> {
+        fields.get("printer_id").and_then(|id_field| {
+            if let SuiMoveValue::Address(id) = id_field {
+                // 確保 ID 包含 0x 前綴
+                let id_str = id.to_string();
+                let formatted_id = if !id_str.starts_with("0x") {
+                    format!("0x{}", id_str)
+                } else {
+                    id_str
+                };
+                Some(formatted_id)
+            } else {
+                None
+            }
+        })
+    }
+    
     // get pool balance from move struct
     fn extract_pool_balance(&self, fields: &BTreeMap<String, SuiMoveValue>) -> u128 {
         fields.get("pool")
@@ -130,8 +148,8 @@ impl Wallet {
         options.show_owner = true;
         options.show_type = true;
         
-        // build full printer type name
-        let printer_type = format!("{}::eureka::Printer", self.network_state.get_current_package_ids().eureka_package_id);
+        // 步驟1: 先尋找用戶持有的 PrinterCap
+        let printercap_type = format!("{}::eureka::PrinterCap", self.network_state.get_current_package_ids().eureka_package_id);
         
         // query user owned objects
         let response = self.client.read_api()
@@ -139,23 +157,26 @@ impl Wallet {
                 address,
                 Some(SuiObjectResponseQuery::new(
                     Some(SuiObjectDataFilter::Package(package_id)),
-                    Some(options)
+                    Some(options.clone())
                 )),
                 None,
                 None
             )
             .await?;
         
-        // iterate all found objects, find correct printer object
+        // 尋找並提取 PrinterCap 中的 printer_id
+        let mut printer_id_from_cap = None;
         for obj in &response.data {
             if let Some(data) = &obj.data {
                 if let Some(content) = &data.content {
                     if let SuiParsedData::MoveObject(move_obj) = content {
-                        // exact match printer type
-                        if move_obj.type_.to_string() == printer_type {
-                            // extract printer info
-                            if let Some(info) = self.extract_printer_from_move_struct(&move_obj.fields) {
-                                return Ok(info);
+                        // 確認是否為 PrinterCap 物件
+                        if move_obj.type_.to_string() == printercap_type {
+                            if let SuiMoveStruct::WithFields(fields) = &move_obj.fields {
+                                printer_id_from_cap = self.extract_printer_id_from_cap(fields);
+                                if printer_id_from_cap.is_some() {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -163,8 +184,31 @@ impl Wallet {
             }
         }
         
-        // if no printer found, return error
-        Err(anyhow::anyhow!("No printer found for this address. Please register a printer first."))
+        // 如果找不到 PrinterCap，返回錯誤
+        let printer_id = printer_id_from_cap.ok_or_else(|| 
+            anyhow!("No PrinterCap found for this address. Please register a printer first.")
+        )?;
+        
+        // 步驟2: 使用獲取到的 printer_id 查詢共享的 Printer 物件
+        let printer_object_id = ObjectID::from_hex_literal(&printer_id)
+            .map_err(|e| anyhow!("Invalid printer ID format: {}", e))?;
+            
+        let printer_response = self.client.read_api()
+            .get_object_with_options(printer_object_id, options)
+            .await?;
+            
+        if let Some(data) = printer_response.data {
+            if let Some(content) = data.content {
+                if let SuiParsedData::MoveObject(move_obj) = content {
+                    if let Some(info) = self.extract_printer_from_move_struct(&move_obj.fields) {
+                        return Ok(info);
+                    }
+                }
+            }
+        }
+        
+        // 如果找不到對應的 Printer 物件，返回錯誤
+        Err(anyhow!("PrinterCap found but corresponding Printer object not found."))
     }
 
     pub async fn get_user_sculpt(&self, address: SuiAddress) -> Result<Vec<SculptItem>> {
