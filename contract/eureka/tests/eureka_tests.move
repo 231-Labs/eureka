@@ -3,7 +3,7 @@ module eureka::eureka_tests{
 
     use sui::test_scenario as ts;
     use std::string;
-    use eureka::eureka::{Self, PrinterRegistry, Printer, test_init_for_testing, register_printer};
+    use eureka::eureka::{Self, PrinterRegistry, Printer, PrinterCap, test_init_for_testing, register_printer, update_printer_status};
     
     const ADMIN: address = @0xAD;
     const PRINTER_OWNER: address = @0xB0B;
@@ -41,39 +41,43 @@ module eureka::eureka_tests{
         // 2. Verify registration and initial state
         ts::next_tx(&mut scenario, PRINTER_OWNER);
         {
-            // Check if printer was transferred to owner
-            assert!(ts::has_most_recent_for_address<Printer>(PRINTER_OWNER), 0);
+            // Check if printer was shared (not transferred to owner)
+            assert!(ts::has_most_recent_shared<Printer>(), 0);
             
-            let mut printer = ts::take_from_address<Printer>(&scenario, PRINTER_OWNER);
+            let mut printer = ts::take_shared<Printer>(&scenario);
             
             // Validate printer properties
             assert!(eureka::get_printer_owner(&printer) == PRINTER_OWNER, 1);
             assert!(!eureka::get_printer_status(&printer), 2); // Default is offline
             
             // 3. First status update: offline -> online
-            eureka::update_printer_status(&mut printer);
+            let cap = ts::take_from_sender<PrinterCap>(&scenario);
+            update_printer_status(&cap, &mut printer);
             
             // Verify status changed to online
             assert!(eureka::get_printer_status(&printer), 3);
             
-            ts::return_to_address(PRINTER_OWNER, printer);
+            ts::return_shared(printer);
+            ts::return_to_sender(&scenario, cap);
         };
 
         // 4. Second status update: online -> offline
         ts::next_tx(&mut scenario, PRINTER_OWNER);
         {
-            let mut printer = ts::take_from_address<Printer>(&scenario, PRINTER_OWNER);
+            let mut printer = ts::take_shared<Printer>(&scenario);
             
             // Verify current status is online
             assert!(eureka::get_printer_status(&printer), 4);
             
             // Update status again
-            eureka::update_printer_status(&mut printer);
+            let cap = ts::take_from_sender<PrinterCap>(&scenario);
+            update_printer_status(&cap, &mut printer);
             
             // Verify status switched back to offline
             assert!(!eureka::get_printer_status(&printer), 5);
             
-            ts::return_to_address(PRINTER_OWNER, printer);
+            ts::return_shared(printer);
+            ts::return_to_sender(&scenario, cap);
         };
         
         ts::end(scenario);
