@@ -15,13 +15,17 @@ use sui_sdk::{
     types::{
         base_types::{ObjectID, SuiAddress},
         Identifier,
+        dynamic_field::DynamicFieldName,
     },
     SuiClient,
 };
+use sui_types::TypeTag;
 use crate::{
     constants::WALRUS_COIN_TYPE,
     utils::{NetworkState},
+    app::print_job::{PrintTask, TaskStatus},
 };
+use serde_json;
 
 
 #[derive(Debug, Clone)]
@@ -311,5 +315,133 @@ impl Wallet {
                 None
             }
         })
+    }
+
+    // 從鏈上獲取當前打印機的委託任務
+    pub async fn get_active_print_job(&self, printer_id: &str) -> Result<Option<PrintTask>> {
+        
+        let printer_object_id = ObjectID::from_hex_literal(printer_id)
+            .map_err(|e| anyhow!("Invalid printer ID format: {}", e))?;
+
+        // 使用 get_dynamic_field_object 獲取 print_job
+        let response = self.client.read_api()
+            .get_dynamic_field_object(
+                printer_object_id,
+                DynamicFieldName {
+                    type_: TypeTag::Vector(Box::new(TypeTag::U8)),
+                    value: serde_json::Value::String("print_job".to_string()),
+                },
+            )
+            .await?;
+
+        if let Some(data) = response.data {
+            if let Some(content) = data.content {
+                if let SuiParsedData::MoveObject(move_obj) = content {
+                    if let SuiMoveStruct::WithFields(fields) = &move_obj.fields {
+                        let task = self.parse_print_job_fields(fields)?;
+                        return Ok(Some(task));
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    // 解析打印任務字段
+    fn parse_print_job_fields(&self, fields: &BTreeMap<String, SuiMoveValue>) -> Result<PrintTask> {
+        let id = self.extract_job_id(fields)?;
+        let sculpt_alias = self.extract_string_field(fields, "sculpt_alias")?;
+        let sculpt_id = self.extract_id_field(fields, "sculpt_id")?;
+        let sculpt_structure = self.extract_string_field(fields, "sculpt_structure")?;
+        let customer = self.extract_address_field(fields, "customer")?;
+        let paid_amount = self.extract_balance_value(fields)?;
+        let is_completed = self.extract_bool_field(fields, "is_completed")?;
+        let start_time = self.extract_optional_u64_field(fields, "start_time");
+        let end_time = self.extract_optional_u64_field(fields, "end_time");
+
+        Ok(PrintTask {
+            id,
+            name: sculpt_alias,
+            sculpt_id,
+            sculpt_structure,
+            customer,
+            paid_amount,
+            start_time,
+            end_time,
+            status: if is_completed { TaskStatus::Completed } else { TaskStatus::Printing },
+        })
+    }
+
+    // 輔助方法：提取任務 ID
+    fn extract_job_id(&self, fields: &BTreeMap<String, SuiMoveValue>) -> Result<String> {
+        if let Some(SuiMoveValue::UID { id }) = fields.get("id") {
+            Ok(format!("0x{}", id))
+        } else {
+            Err(anyhow!("Failed to extract job ID"))
+        }
+    }
+
+    // 輔助方法：提取字符串字段
+    fn extract_string_field(&self, fields: &BTreeMap<String, SuiMoveValue>, field_name: &str) -> Result<String> {
+        if let Some(SuiMoveValue::String(value)) = fields.get(field_name) {
+            Ok(value.clone())
+        } else {
+            Err(anyhow!("Failed to extract {} field", field_name))
+        }
+    }
+
+    // 輔助方法：提取 ID 字段
+    fn extract_id_field(&self, fields: &BTreeMap<String, SuiMoveValue>, field_name: &str) -> Result<String> {
+        if let Some(SuiMoveValue::Address(id)) = fields.get(field_name) {
+            Ok(format!("0x{}", id))
+        } else {
+            Err(anyhow!("Failed to extract {} field", field_name))
+        }
+    }
+
+    // 輔助方法：提取地址字段
+    fn extract_address_field(&self, fields: &BTreeMap<String, SuiMoveValue>, field_name: &str) -> Result<String> {
+        if let Some(SuiMoveValue::Address(address)) = fields.get(field_name) {
+            Ok(format!("0x{}", address))
+        } else {
+            Err(anyhow!("Failed to extract {} field", field_name))
+        }
+    }
+
+    // 輔助方法：提取布爾字段
+    fn extract_bool_field(&self, fields: &BTreeMap<String, SuiMoveValue>, field_name: &str) -> Result<bool> {
+        if let Some(SuiMoveValue::Bool(value)) = fields.get(field_name) {
+            Ok(*value)
+        } else {
+            Err(anyhow!("Failed to extract {} field", field_name))
+        }
+    }
+
+    // 輔助方法：提取可選的 u64 字段
+    fn extract_optional_u64_field(&self, fields: &BTreeMap<String, SuiMoveValue>, field_name: &str) -> Option<u64> {
+        fields.get(field_name).and_then(|value| {
+            if let SuiMoveValue::Option(inner) = value {
+                if let Some(inner_value) = inner.as_ref() {
+                    if let SuiMoveValue::Number(num) = inner_value {
+                        num.to_string().parse::<u64>().ok()
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+    }
+
+    // 輔助方法：提取餘額值
+    fn extract_balance_value(&self, fields: &BTreeMap<String, SuiMoveValue>) -> Result<u64> {
+        if let Some(SuiMoveValue::String(value)) = fields.get("paid_amount") {
+            return value.parse::<u64>()
+                .map_err(|_| anyhow!("Failed to parse balance value"));
+        }
+        Err(anyhow!("Failed to extract balance value"))
     }
 } 

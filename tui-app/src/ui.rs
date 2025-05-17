@@ -6,8 +6,8 @@ use ratatui::{
     Frame,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::app::{App, RegistrationStatus, MessageType, TaskStatus};
-use crate::constants::{EUREKA_FRAMES, BUILD_ON_SUI};
+use crate::app::{App, RegistrationStatus, TaskStatus};
+use crate::constants::{EUREKA_FRAMES, BUILD_ON_SUI, PRINTER_IDLE_FRAMES, PRINTER_ACTIVE_FRAMES};
 use textwrap;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -319,6 +319,13 @@ fn draw_registration(f: &mut Frame, app: &mut App) {
     }
 }
 
+// 添加這個輔助函數來將ASCII藝術分割成多行並添加顏色
+fn split_ascii_art(art: &str, color: Color) -> Vec<Line> {
+    art.trim().lines()
+        .map(|line| Line::from(vec![Span::styled(line.to_string(), Style::default().fg(color))]))
+        .collect()
+}
+
 fn draw_main(f: &mut Frame, app: &mut App) {
     // 獲取當前主題顏色
     let (primary_color, secondary_color, accent_color) = if app.is_online {
@@ -538,30 +545,16 @@ fn draw_main(f: &mut Frame, app: &mut App) {
         // 在線狀態顯示任務列表
         let completed_tasks: Vec<ListItem> = app.tasks
             .iter()
-            .filter(|task| matches!(task.status, TaskStatus::Completed))
+            .filter(|task| task.is_completed())
             .map(|task| {
-                let end_time = task.end_time.unwrap_or_default();
-                let end_time_str = if end_time > 0 {
-                    let dt = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(end_time);
-                    if let Ok(datetime) = dt.duration_since(UNIX_EPOCH) {
-                        format!("{:02}:{:02}", 
-                            (datetime.as_secs() / 3600) % 24,
-                            (datetime.as_secs() / 60) % 60)
-                    } else {
-                        "??:??".to_string()
-                    }
-                } else {
-                    "??:??".to_string()
-                };
-
                 ListItem::new(Line::from(vec![
                     Span::styled("[", Style::default().fg(dim_color)),
-                    Span::styled(end_time_str, Style::default().fg(Color::Cyan)),
+                    Span::styled(task.format_end_time(), Style::default().fg(Color::Cyan)),
                     Span::styled("] ", Style::default().fg(dim_color)),
                     Span::styled(task.name.clone(), Style::default().fg(secondary_color)),
                     Span::styled(" - ", Style::default().fg(dim_color)),
                     Span::styled(
-                        format!("{:.2} SUI", task.paid_amount as f64 / 1_000_000_000.0),
+                        task.format_paid_amount(),
                         Style::default().fg(Color::Green),
                     ),
                 ]))
@@ -604,8 +597,8 @@ fn draw_main(f: &mut Frame, app: &mut App) {
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(6),   // 訊息展示區增加到 6 行高度
-            Constraint::Length(18),  // 主要列印任務狀態
+            Constraint::Length(3),   // 訊息展示區縮小為 3 行高度
+            Constraint::Length(21),  // 主要列印任務狀態增加到 21 行高度
             Constraint::Min(0),      // 底部區域
         ])
         .split(content_layout[1]);
@@ -648,114 +641,252 @@ fn draw_main(f: &mut Frame, app: &mut App) {
     let active_task = app.tasks.iter()
         .find(|task| matches!(task.status, TaskStatus::Printing));
     
-    if let Some(task) = active_task {
-        let task_block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Thick)
-            .title(" ACTIVE PRINT JOB ")
-            .title_alignment(Alignment::Center)
-            .border_style(Style::default().fg(primary_color));
+    let task_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Thick)
+        .title(" ACTIVE PRINT JOB ")
+        .title_alignment(Alignment::Center)
+        .border_style(Style::default().fg(primary_color));
 
-        let current_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-
-        let elapsed_time = task.start_time
-            .map(|start| current_time.saturating_sub(start))
-            .unwrap_or(0);
+    // 獲取動畫幀
+    let animation_time = time % 4;
+    let animation_frame = animation_time as usize;
         
-        let elapsed_hours = elapsed_time / 3600;
-        let elapsed_minutes = (elapsed_time % 3600) / 60;
+    if app.is_online {
+        if let Some(task) = active_task {
+            // 在線模式 - 有委託任務的顯示
+            let current_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
 
-        let task_info = vec![
-            Line::from(""),
+            let elapsed_time = task.start_time
+                .map(|start| current_time.saturating_sub(start))
+                .unwrap_or(0);
+            
+            let _elapsed_hours = elapsed_time / 3600;
+            let _elapsed_minutes = (elapsed_time % 3600) / 60;
+
+            let mut task_info = vec![
+                Line::from("").alignment(Alignment::Center),
+                Line::from(vec![
+                    Span::raw("╭─"),
+                    Span::styled("MODEL", Style::default().fg(highlight_color)),
+                    Span::raw("─╮"),
+                ]).alignment(Alignment::Center),
+                Line::from(vec![
+                    Span::styled(&task.name, Style::default().fg(secondary_color).add_modifier(Modifier::BOLD)),
+                ]).alignment(Alignment::Center),
+                Line::from(vec![
+                    Span::raw("╰"),
+                    Span::styled("──────", Style::default().fg(dim_color)),
+                    Span::raw("╯"),
+                ]).alignment(Alignment::Center),
+                Line::from("").alignment(Alignment::Center),
+            ];
+
+            // 根據打印機狀態選擇動畫
+            let frames = if matches!(app.print_status, crate::app::PrintStatus::Printing) {
+                // 打印中狀態 - 顯示打印中動畫
+                split_ascii_art(PRINTER_ACTIVE_FRAMES[animation_frame], Color::Cyan)
+            } else {
+                // 待機狀態 - 顯示待機動畫
+                split_ascii_art(PRINTER_IDLE_FRAMES[animation_frame], Color::Cyan)
+            };
+            task_info.extend(frames);
+
+            // 狀態文本
+            let status_text = if matches!(app.print_status, crate::app::PrintStatus::Printing) {
+                "[ PRINTING ]"
+            } else {
+                "[ READY TO PRINT ]"
+            };
+
+            task_info.extend(vec![
+                Line::from(vec![
+                    Span::styled("SCULPT ID: ", Style::default().fg(dim_color)),
+                    Span::styled(task.get_short_sculpt_id(), Style::default().fg(secondary_color)),
+                ]).alignment(Alignment::Center),
+                Line::from(vec![
+                    Span::styled("CUSTOMER: ", Style::default().fg(dim_color)),
+                    Span::styled(task.get_short_customer(), Style::default().fg(secondary_color)),
+                ]).alignment(Alignment::Center),
+                Line::from("").alignment(Alignment::Center),
+                Line::from(vec![
+                    Span::styled(status_text, Style::default().fg(Color::Cyan)),
+                ]).alignment(Alignment::Center),
+                Line::from(vec![
+                    Span::styled("◈ ", Style::default().fg(highlight_color)),
+                    Span::styled(
+                        task.format_paid_amount(),
+                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                    ),
+                    Span::styled(" ◈", Style::default().fg(highlight_color)),
+                ]).alignment(Alignment::Center),
+                Line::from(vec![
+                    Span::styled("ELAPSED: ", Style::default().fg(dim_color)),
+                    Span::styled(
+                        task.format_elapsed_time(),
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                    ),
+                ]).alignment(Alignment::Center),
+            ]);
+
+            // 根據打印機狀態添加不同的操作提示
+            if !matches!(app.print_status, crate::app::PrintStatus::Printing) {
+                task_info.push(Line::from(vec![
+                    Span::styled("Press ", Style::default().fg(dim_color)),
+                    Span::styled("P", Style::default().fg(highlight_color)),
+                    Span::styled(" to start printing", Style::default().fg(dim_color)),
+                ]).alignment(Alignment::Center));
+            } else {
+                task_info.push(Line::from(vec![
+                    Span::styled("Press ", Style::default().fg(dim_color)),
+                    Span::styled("E", Style::default().fg(highlight_color)),
+                    Span::styled(" to stop printing", Style::default().fg(dim_color)),
+                ]).alignment(Alignment::Center));
+            }
+
+            let task_widget = Paragraph::new(task_info)
+                .style(Style::default())
+                .alignment(Alignment::Center)
+                .block(task_block);
+
+            f.render_widget(task_widget, right_chunks[1]);
+        } else {
+            // 在線模式 - 無委託任務時顯示待機動畫
+            let mut idle_text = vec![
+                Line::from(vec![
+                    Span::styled("◢ ", Style::default().fg(highlight_color)),
+                    Span::styled("ONLINE MODE - AWAITING TASKS", Style::default().fg(secondary_color)),
+                    Span::styled(" ◣", Style::default().fg(highlight_color)),
+                ]).alignment(Alignment::Center),
+                Line::from("").alignment(Alignment::Center),
+            ];
+            
+            // 添加待機動畫
+            let frames = split_ascii_art(PRINTER_IDLE_FRAMES[animation_frame], Color::Cyan);
+            idle_text.extend(frames);
+            
+            idle_text.extend(vec![
+                Line::from("").alignment(Alignment::Center),
+                Line::from(vec![
+                    Span::styled("[ READY TO PRINT ]", Style::default().fg(Color::Cyan)),
+                ]).alignment(Alignment::Center),
+                Line::from("").alignment(Alignment::Center),
+                Line::from(vec![
+                    Span::styled("Press ", Style::default().fg(dim_color)),
+                    Span::styled("P", Style::default().fg(highlight_color)),
+                    Span::styled(" to print active job", Style::default().fg(dim_color)),
+                ]).alignment(Alignment::Center),
+            ]);
+            
+            let idle_widget = Paragraph::new(idle_text)
+                .style(Style::default())
+                .alignment(Alignment::Center)
+                .block(task_block);
+                
+            f.render_widget(idle_widget, right_chunks[1]);
+        }
+    } else if matches!(app.print_status, crate::app::PrintStatus::Idle) {
+        // 離線模式 - 未列印狀態
+        let mut idle_text = vec![
+            // 添加一些空行，使內容下移
+            Line::from("").alignment(Alignment::Center),
+            Line::from("").alignment(Alignment::Center),
+            Line::from("").alignment(Alignment::Center),
             Line::from(vec![
-                Span::raw("╭─"),
-                Span::styled("MODEL", Style::default().fg(highlight_color)),
-                Span::raw("─╮"),
+                Span::styled("◢ ", Style::default().fg(highlight_color)),
+                Span::styled("OFFLINE MODE - STANDBY", Style::default().fg(secondary_color)),
+                Span::styled(" ◣", Style::default().fg(highlight_color)),
             ]).alignment(Alignment::Center),
-            Line::from(vec![
-                Span::styled(&task.name, Style::default().fg(secondary_color).add_modifier(Modifier::BOLD)),
-            ]).alignment(Alignment::Center),
-            Line::from(vec![
-                Span::raw("╰"),
-                Span::styled("──────", Style::default().fg(dim_color)),
-                Span::raw("╯"),
-            ]).alignment(Alignment::Center),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("SCULPT ID: ", Style::default().fg(dim_color)),
-                Span::styled(&task.sculpt_id, Style::default().fg(secondary_color)),
-            ]).alignment(Alignment::Center),
-            Line::from(vec![
-                Span::styled("CUSTOMER: ", Style::default().fg(dim_color)),
-                Span::styled(&task.customer, Style::default().fg(secondary_color)),
-            ]).alignment(Alignment::Center),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("◈ ", Style::default().fg(highlight_color)),
-                Span::styled(
-                    format!("{:.2} SUI", task.paid_amount as f64 / 1_000_000_000.0),
-                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
-                ),
-                Span::styled(" ◈", Style::default().fg(highlight_color)),
-            ]).alignment(Alignment::Center),
-            Line::from(vec![
-                Span::styled("ELAPSED: ", Style::default().fg(dim_color)),
-                Span::styled(
-                    format!("{:02}:{:02}", elapsed_hours, elapsed_minutes),
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-                ),
-            ]).alignment(Alignment::Center),
-            Line::from(""),
-            Line::from(""),
-            Line::from(""),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("▓▓▓ ", Style::default().fg(highlight_color)),
-                Span::styled("PRINTING", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled(" ▓▓▓", Style::default().fg(highlight_color)),
-            ]).alignment(Alignment::Center),
+            Line::from("").alignment(Alignment::Center),
         ];
-
-        let task_widget = Paragraph::new(task_info)
+        
+        // 添加待機動畫
+        let frames = split_ascii_art(PRINTER_IDLE_FRAMES[animation_frame], Color::Magenta);
+        idle_text.extend(frames);
+        
+        idle_text.extend(vec![
+            Line::from("").alignment(Alignment::Center),
+            Line::from(vec![
+                Span::styled("[ PERSONAL USE ]", Style::default().fg(Color::Magenta)),
+            ]).alignment(Alignment::Center),
+            Line::from("").alignment(Alignment::Center),
+            Line::from(vec![
+                Span::styled("Select a model and press ", Style::default().fg(dim_color)),
+                Span::styled("P", Style::default().fg(highlight_color)),
+                Span::styled(" to print", Style::default().fg(dim_color)),
+            ]).alignment(Alignment::Center),
+            // 添加一些空行，使內容更居中
+            Line::from("").alignment(Alignment::Center),
+            Line::from("").alignment(Alignment::Center),
+        ]);
+        
+        let idle_widget = Paragraph::new(idle_text)
             .style(Style::default())
             .alignment(Alignment::Center)
             .block(task_block);
-
-        f.render_widget(task_widget, right_chunks[1]);
+            
+        f.render_widget(idle_widget, right_chunks[1]);
     } else {
-        // 無活動任務時的顯示
-        let no_task_text = vec![
-            Line::from(vec![
-                Span::styled("◢ ", Style::default().fg(dim_color)),
-                Span::styled("PRINTER IDLE", Style::default().fg(secondary_color)),
-                Span::styled(" ◣", Style::default().fg(dim_color)),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("STATUS: ", Style::default().fg(dim_color)),
-                Span::styled("□ STANDBY", Style::default().fg(Color::Yellow)),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("Press ", Style::default().fg(dim_color)),
-                Span::styled("P", Style::default().fg(highlight_color)),
-                Span::styled(" to start new print job", Style::default().fg(dim_color)),
-            ]),
-        ];
-        let no_task_widget = Paragraph::new(no_task_text)
-            .style(Style::default())
-            .alignment(Alignment::Center)
-            .block(Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(dim_color)));
-        f.render_widget(no_task_widget, right_chunks[1]);
+        // 離線模式 - 正在列印自己的模型
+        // 獲取選中的模型
+        if let Some(selected) = app.sculpt_state.selected() {
+            if let Some(sculpt) = app.sculpt_items.get(selected) {
+                let mut printing_text = vec![
+                    // 添加一些空行，使內容下移
+                    Line::from("").alignment(Alignment::Center),
+                    Line::from("").alignment(Alignment::Center),
+                    Line::from("").alignment(Alignment::Center),
+                    Line::from(vec![
+                        Span::styled("◢ ", Style::default().fg(highlight_color)),
+                        Span::styled("PERSONAL MODEL PRINTING", Style::default().fg(secondary_color)),
+                        Span::styled(" ◣", Style::default().fg(highlight_color)),
+                    ]).alignment(Alignment::Center),
+                    Line::from("").alignment(Alignment::Center),
+                    Line::from(vec![
+                        Span::styled(sculpt.alias.clone(), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                    ]).alignment(Alignment::Center),
+                    Line::from("").alignment(Alignment::Center),
+                ];
+                
+                // 添加動畫
+                let frames = split_ascii_art(PRINTER_ACTIVE_FRAMES[animation_frame], Color::Magenta);
+                printing_text.extend(frames);
+                
+                printing_text.extend(vec![
+                    Line::from("").alignment(Alignment::Center),
+                    Line::from(vec![
+                        Span::styled("SCULPT ID: ", Style::default().fg(dim_color)),
+                        Span::styled(&sculpt.blob_id, Style::default().fg(secondary_color)),
+                    ]).alignment(Alignment::Center),
+                    Line::from(vec![
+                        Span::styled("PRINT COUNT: ", Style::default().fg(dim_color)),
+                        Span::styled(sculpt.printed_count.to_string(), Style::default().fg(secondary_color)),
+                    ]).alignment(Alignment::Center),
+                    Line::from("").alignment(Alignment::Center),
+                    Line::from(vec![
+                        Span::styled("Press ", Style::default().fg(dim_color)),
+                        Span::styled("E", Style::default().fg(highlight_color)),
+                        Span::styled(" to stop printing", Style::default().fg(dim_color)),
+                    ]).alignment(Alignment::Center),
+                    // 添加一些空行，使內容更居中
+                    Line::from("").alignment(Alignment::Center),
+                    Line::from("").alignment(Alignment::Center),
+                ]);
+                
+                let printing_widget = Paragraph::new(printing_text)
+                    .style(Style::default())
+                    .alignment(Alignment::Center)
+                    .block(task_block);
+                    
+                f.render_widget(printing_widget, right_chunks[1]);
+            }
+        }
     }
 
-    // 底部區域（原 COMPLETED JOBS 區域）
+    // 底部區域
     let bottom_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)

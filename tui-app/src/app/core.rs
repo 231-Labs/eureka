@@ -5,26 +5,7 @@ use anyhow::Result;
 use sui_sdk::SuiClient;
 use std::sync::Arc;
 use std::vec::Vec;
-
-#[derive(Clone, PartialEq)]
-#[allow(dead_code)]
-pub enum TaskStatus {
-    Printing,
-    Completed,
-}
-
-#[derive(Clone)]
-pub struct PrintTask {
-    pub id: String,
-    pub name: String,
-    pub sculpt_id: String,
-    pub sculpt_structure: String,
-    pub customer: String,
-    pub paid_amount: u64,
-    pub start_time: Option<u64>,
-    pub end_time: Option<u64>,
-    pub status: TaskStatus,
-}
+use super::print_job::{PrintTask};
 
 #[derive(Clone, PartialEq)]
 pub enum RegistrationStatus {
@@ -52,9 +33,8 @@ pub enum ScriptStatus {
 #[derive(Debug, Clone, PartialEq)]
 pub enum PrintStatus {
     Idle,
-    // Printing(u8),  // Progress percentage
+    Printing,
     Completed,
-    // Paused,
     Error(String),
 }
 
@@ -105,11 +85,9 @@ impl App {
         let wal_balance = wallet.get_walrus_balance(wallet.get_active_address().await?).await?;
         let printer_info = match wallet.get_printer_info(wallet.get_active_address().await?).await {
             Ok(info) => {
-                //println!("獲取到打印機 ID: {}", info.id);  // 添加日誌
                 info
             },
-            Err(e) => {
-                //println!("未能獲取打印機資訊: {}", e);  // 添加日誌
+            Err(_e  ) => {
                 PrinterInfo {
                     id: "No Printer ID".to_string(),
                     pool_balance: 0,
@@ -141,30 +119,7 @@ impl App {
             printer_id: printer_info.id.clone(),
             is_online: false,
             sculpt_state: ListState::default(),
-            tasks: vec![
-                PrintTask {
-                    id: "task_001".to_string(),
-                    name: "Benchy 3D".to_string(),
-                    sculpt_id: "0x123...abc".to_string(),
-                    sculpt_structure: "Standard".to_string(),
-                    customer: "0x598...fbd".to_string(),
-                    paid_amount: 1_000_000_000, // 1 SUI
-                    start_time: Some(1709856000), // Unix timestamp
-                    end_time: None,
-                    status: TaskStatus::Printing,
-                },
-                PrintTask {
-                    id: "task_002".to_string(),
-                    name: "Calibration Cube".to_string(),
-                    sculpt_id: "0x456...def".to_string(),
-                    sculpt_structure: "Basic".to_string(),
-                    customer: "0x598...fbd".to_string(),
-                    paid_amount: 500_000_000, // 0.5 SUI
-                    start_time: Some(1709852400),
-                    end_time: Some(1709856000),
-                    status: TaskStatus::Completed,
-                },
-            ],
+            tasks: PrintTask::new_mock_tasks(),
             tasks_state: ListState::default(),
             is_confirming: false,
             is_harvesting: false,
@@ -267,6 +222,47 @@ impl App {
             }
         }
         
+        Ok(())
+    }
+
+    pub async fn update_print_tasks(&mut self) -> Result<()> {
+        if self.is_online && self.printer_id != "No Printer ID" {
+            // 獲取當前活動的打印任務
+            match self.wallet.get_active_print_job(&self.printer_id).await {
+                Ok(Some(task)) => {
+                    // 檢查是否已經有這個任務
+                    let task_exists = self.tasks.iter().any(|t| t.id == task.id);
+                    
+                    if !task_exists {
+                        // 如果是新任務，添加到任務列表的開頭
+                        self.tasks.insert(0, task.clone());
+                        // 確保選中最新的任務
+                        self.tasks_state.select(Some(0));
+                        // 新任務默認為待機狀態
+                        self.print_status = PrintStatus::Idle;
+                        self.script_status = ScriptStatus::Idle;
+                    } else {
+                        // 如果任務已存在，更新其狀態
+                        if let Some(existing_task) = self.tasks.iter_mut().find(|t| t.id == task.id) {
+                            *existing_task = task.clone();
+                            // 只有在腳本正在運行時才設置為打印狀態
+                            if matches!(self.script_status, ScriptStatus::Running) {
+                                self.print_status = PrintStatus::Printing;
+                            }
+                        }
+                    }
+                }
+                Ok(None) => {
+                    // 如果沒有活動任務，設置打印機為空閒狀態
+                    self.print_status = PrintStatus::Idle;
+                    self.script_status = ScriptStatus::Idle;
+                }
+                Err(e) => {
+                    println!("獲取打印任務時出錯：{:?}", e);
+                    self.set_message(MessageType::Error, format!("獲取打印任務失敗：{}", e));
+                }
+            }
+        }
         Ok(())
     }
 }

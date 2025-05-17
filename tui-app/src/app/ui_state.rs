@@ -124,7 +124,13 @@ impl App {
                     crate::app::ScriptStatus::Failed(_) => "║▒▓░ SCRIPT ERROR ░▓▒║".to_string(),
                 }
             }
-            // PrintStatus::Printing(progress) => format!("║▒▓░ PRINTING {}% ░▓▒║", progress),
+            crate::app::PrintStatus::Printing => {
+                match frame {
+                    0 => "║▓▒░ PRINTING ░▒▓║".to_string(),
+                    1 => "║▒▓░ PRINTING ░▓▒║".to_string(),
+                    _ => "║░▓▒ PRINTING ▒▓░║".to_string(),
+                }
+            }
             crate::app::PrintStatus::Completed => "║▓▒░ PRINT COMPLETE ░▒▓║".to_string(),
             crate::app::PrintStatus::Error(_) => "║▒▓░ PRINTER ERROR ░▓▒║".to_string(),
         }

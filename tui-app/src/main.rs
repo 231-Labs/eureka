@@ -59,7 +59,7 @@ async fn run_app<B: ratatui::backend::Backend>(
 ) -> Result<()> {
     // retry interval
     let mut last_update_time = std::time::Instant::now();
-    let retry_interval = std::time::Duration::from_secs(3); // 每2秒嘗試一次獲取打印機ID
+    let retry_interval = std::time::Duration::from_secs(3); // 每3秒嘗試一次獲取打印機ID
     
     // track if printer id is acquired
     let mut printer_id_acquired = false;
@@ -157,8 +157,14 @@ async fn run_app<B: ratatui::backend::Backend>(
                             }
                         }
                         KeyCode::Char('p') => {
-                            if !app_guard.is_online && !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
-                                App::handle_model_selection(Arc::clone(&app_arc), false).await?;
+                            if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
+                                if app_guard.is_online {
+                                    // 在線模式下處理打印任務
+                                    App::handle_task_print(Arc::clone(&app_arc), false).await?;
+                                } else {
+                                    // 離線模式下處理本地模型
+                                    App::handle_model_selection(Arc::clone(&app_arc), false).await?;
+                                }
                             }
                         }
                         KeyCode::Char('e') => {
@@ -169,8 +175,14 @@ async fn run_app<B: ratatui::backend::Backend>(
                             }
                         }
                         KeyCode::Enter => {
-                            if !app_guard.is_online && !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
-                                App::handle_model_selection(Arc::clone(&app_arc), true).await?;
+                            if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
+                                if app_guard.is_online {
+                                    // 在線模式下只下載不打印
+                                    App::handle_task_print(Arc::clone(&app_arc), true).await?;
+                                } else {
+                                    // 離線模式下只下載不打印
+                                    App::handle_model_selection(Arc::clone(&app_arc), true).await?;
+                                }
                             }
                         }
                         // network switch

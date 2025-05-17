@@ -30,60 +30,44 @@ impl App {
             
             // get printer info and printer cap
             let address = self.wallet.get_active_address().await?;
+            
             match self.wallet.get_printer_info(address).await {
                 Ok(info) => {
-                    let printer_id_str = info.id;
-                    self.printer_id = printer_id_str.clone();
-                    self.set_message(MessageType::Info, format!("Using printer ID: {}", printer_id_str));
-                    
-                    // 將 printer_id 轉為 ObjectID
-                    let printer_object_id = match ObjectID::from_hex_literal(&printer_id_str) {
-                        Ok(id) => id,
-                        Err(e) => {
-                            self.set_message(MessageType::Error, format!("Invalid printer ID format: {} - {}", printer_id_str, e));
-                            return Ok(());
-                        }
-                    };
-                    
-                    // 獲取 PrinterCap 對象 ID
                     match self.wallet.get_printer_cap_id(address).await {
                         Ok(cap_id) => {
-                            // 將 PrinterCap 的 ID 轉為 ObjectID
-                            let printer_cap_id = match ObjectID::from_hex_literal(&cap_id) {
-                                Ok(id) => id,
-                                Err(e) => {
-                                    self.set_message(MessageType::Error, format!("Invalid PrinterCap ID format: {} - {}", cap_id, e));
-                                    return Ok(());
-                                }
-                            };
+                            // 更新打印機狀態
+                            let printer_cap_id = ObjectID::from_hex_literal(&cap_id)?;
+                            let printer_object_id = ObjectID::from_hex_literal(&info.id)?;
                             
-                            // 調用更新狀態的交易（傳遞 PrinterCap ID 和 Printer ID）
                             match builder.update_printer_status(printer_cap_id, printer_object_id).await {
-                                Ok(tx_digest) => {
-                                    // only update UI state after transaction success
+                                Ok(tx_id) => {
                                     self.is_online = !original_state;
-                                    
-                                    let status_text = if self.is_online { "ONLINE" } else { "OFFLINE" };
-                                    
-                                    // set success message directly
                                     self.set_message(
-                                        MessageType::Success, 
-                                        format!("Printer status updated to {} (Transaction ID: {})", status_text, tx_digest)
+                                        MessageType::Success,
+                                        format!("Printer status: {} (Digest: {})",
+                                            if self.is_online { "ONLINE" } else { "OFFLINE" },
+                                            tx_id
+                                        )
                                     );
-                                },
+                                    
+                                    // 如果切換到 online 模式，立即獲取打印任務
+                                    if self.is_online {
+                                        if let Err(e) = self.update_print_tasks().await {
+                                            self.set_message(MessageType::Error, format!("Failed to get print tasks: {}", e));
+                                        }
+                                    }
+                                }
                                 Err(e) => {
-                                    // only set error message
                                     self.set_message(MessageType::Error, format!("Failed to update printer status: {}", e));
-                                    return Ok(());
                                 }
                             }
-                        },
+                        }
                         Err(e) => {
                             self.set_message(MessageType::Error, format!("Failed to get PrinterCap ID: {}", e));
                             return Ok(());
                         }
                     }
-                },
+                }
                 Err(e) => {
                     self.set_message(MessageType::Error, format!("Failed to get printer info: {}", e));
                     return Ok(());
@@ -92,6 +76,13 @@ impl App {
         } else {
             // if no printer, directly update UI state
             self.is_online = !original_state;
+            
+            // 如果切換到 online 模式，立即獲取打印任務
+            if self.is_online {
+                if let Err(e) = self.update_print_tasks().await {
+                    self.set_message(MessageType::Error, format!("Failed to get print tasks: {}", e));
+                }
+            }
         }
 
         // if offline, update sculpt items
@@ -177,26 +168,32 @@ impl App {
         Ok(())
     }
 
-    pub async fn run_print_script(app: Arc<Mutex<App>>) -> bool {
+    pub async fn run_print_script(app: Arc<Mutex<App>>) -> Result<bool, String> {
         {
             let mut app_guard = app.lock().await;
             app_guard.script_status = ScriptStatus::Running;
-            app_guard.print_status = PrintStatus::Idle;
+            app_guard.print_status = PrintStatus::Printing;
             app_guard.clear_print_output();
             app_guard.set_message(MessageType::Info, "Printing...".to_string());
         }
         
         // Use channel to wait for script completion
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<bool>(1);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<bool, String>>(1);
         let app_clone = Arc::clone(&app);
         
         // Check if Gcode-Transmit directory exists before executing script
         {
             let transmit_dir = std::path::Path::new("Gcode-Transmit");
             if !transmit_dir.exists() || !transmit_dir.is_dir() {
+                let error_msg = "Gcode-Transmit directory does not exist".to_string();
                 let mut app_locked = app_clone.lock().await;
-                app_locked.print_output.push("[ERROR] Gcode-Transmit directory does not exist".to_string());
-                return false;
+                app_locked.print_output.push(format!("[ERROR] {}", error_msg));
+                app_locked.script_status = ScriptStatus::Failed(error_msg.clone());
+                // FIXME: Test Only - 正式版本發布前需恢復此行，確保錯誤時正確設置打印狀態
+                // 當前忽略錯誤保持打印狀態，方便測試UI動畫效果
+                // app_locked.print_status = PrintStatus::Error(error_msg.clone());
+                app_locked.set_message(MessageType::Error, error_msg.clone());
+                return Err(error_msg);
             }
         }
         
@@ -216,11 +213,14 @@ impl App {
                 .spawn() {
                     Ok(child) => child,
                     Err(e) => {
+                        let error_msg = format!("Failed to start script: {}", e);
                         let mut app = app_clone.lock().await;
-                        app.script_status = ScriptStatus::Failed(format!("Failed to start script: {}", e));
-                        app.print_status = PrintStatus::Error(format!("Failed to start script: {}", e));
-                        app.set_message(MessageType::Error, format!("Failed to start script: {}", e));
-                        let _ = tx.send(false).await;
+                        app.script_status = ScriptStatus::Failed(error_msg.clone());
+                        // FIXME: Test Only - 正式版本發布前需恢復此行，確保腳本啟動失敗時正確設置打印狀態
+                        // 當前忽略錯誤保持打印狀態，以便在開發階段觀察UI行為
+                        // app.print_status = PrintStatus::Error(error_msg.clone());
+                        app.set_message(MessageType::Error, error_msg.clone());
+                        let _ = tx.send(Err(error_msg)).await;
                         return;
                     }
                 };
@@ -259,11 +259,14 @@ impl App {
             let status = match child.wait().await {
                 Ok(status) => status,
                 Err(e) => {
+                    let error_msg = format!("Script execution failed: {}", e);
                     let mut app = app_clone.lock().await;
-                    app.script_status = ScriptStatus::Failed(format!("Script execution failed: {}", e));
-                    app.print_status = PrintStatus::Error(format!("Script execution failed: {}", e));
-                    app.set_message(MessageType::Error, format!("Script execution failed: {}", e));
-                    let _ = tx.send(false).await;
+                    app.script_status = ScriptStatus::Failed(error_msg.clone());
+                    // FIXME: Test Only - 正式版本發布前需恢復此行，確保腳本執行失敗時正確設置打印狀態
+                    // 當前保持打印狀態以方便測試UI效果，與在線模式保持一致
+                    // app.print_status = PrintStatus::Error(error_msg.clone());
+                    app.set_message(MessageType::Error, error_msg.clone());
+                    let _ = tx.send(Err(error_msg)).await;
                     return;
                 }
             };
@@ -277,7 +280,7 @@ impl App {
                 app.script_status = ScriptStatus::Completed;
                 app.print_status = PrintStatus::Completed;
                 app.set_message(MessageType::Success, "Print completed successfully".to_string());
-                let _ = tx.send(true).await;
+                let _ = tx.send(Ok(true)).await;
             } else {
                 let error_code = status.code().unwrap_or(-1);
                 let error_msg = match error_code {
@@ -286,15 +289,21 @@ impl App {
                     3 => "Serial communication failed",
                     _ => "Unknown error",
                 };
-                app.script_status = ScriptStatus::Failed(format!("Script execution failed (Error code: {}): {}", error_code, error_msg));
-                app.print_status = PrintStatus::Error(format!("Script execution failed (Error code: {}): {}", error_code, error_msg));
-                app.set_message(MessageType::Error, format!("Script execution failed (Error code: {}): {}", error_code, error_msg));
-                let _ = tx.send(false).await;
+                let full_error = format!("Script execution failed (Error code: {}): {}", error_code, error_msg);
+                app.script_status = ScriptStatus::Failed(full_error.clone());
+                // FIXME: Test Only - 正式版本發布前需恢復此行，確保完整反映真實打印狀態
+                // 目前無論是否成功都保持打印狀態，統一在線/離線模式行為
+                // app.print_status = PrintStatus::Error(full_error.clone());
+                app.set_message(MessageType::Error, full_error.clone());
+                let _ = tx.send(Err(full_error)).await;
             }
         });
         
         // Wait for script completion and return result
-        rx.recv().await.unwrap_or(false)
+        match rx.recv().await {
+            Some(result) => result,
+            None => Err("Communication channel with print script was closed unexpectedly".to_string())
+        }
     }
 
     pub async fn run_stop_script(&mut self) -> Result<()> {
