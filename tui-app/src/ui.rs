@@ -598,6 +598,13 @@ fn draw_main(f: &mut Frame, app: &mut App) {
         .split(content_layout[1]);
 
     f.render_widget(right_block, content_layout[1]);
+    //右側content內容動畫
+    let content_block = Block::default().title("Status").borders(Borders::ALL);
+    let content = Paragraph::new(app.content.as_str())
+        .block(content_block)
+        .wrap(Wrap { trim: true })
+        .style(Style::default().fg(base_color));
+    f.render_widget(content, right_chunks[1]);
 
     // 錯誤訊息區域
     if let Some(error) = &app.error_message {
