@@ -87,9 +87,9 @@ impl App {
             Ok(info) => {
                 info
             },
-            Err(e) => {
+            Err(_) => {
                 PrinterInfo {
-                    id: e.to_string(),
+                    id: "No Printer ID".to_string(),
                     pool_balance: 0,
                 }
             }
