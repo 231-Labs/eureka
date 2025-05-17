@@ -24,20 +24,20 @@ use app::App;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // 設置終端
+    // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // 初始化應用程序狀態
+    // Initialize application state
     let app = Arc::new(Mutex::new(App::new().await?));
 
-    // 運行應用
+    // Run application
     let result = run_app(&mut terminal, Arc::clone(&app)).await;
 
-    // 恢復終端
+    // Restore terminal
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -57,21 +57,21 @@ async fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     app: Arc<Mutex<App>>,
 ) -> Result<()> {
-    // retry interval
+    // Retry interval
     let mut last_update_time = std::time::Instant::now();
-    let retry_interval = std::time::Duration::from_secs(3); // 每3秒嘗試一次獲取打印機ID
+    let retry_interval = std::time::Duration::from_secs(5); // Retry getting printer ID every 3 second
     
-    // track if printer id is acquired
+    // Track if printer ID is acquired
     let mut printer_id_acquired = false;
     
     loop {
         let app_arc = Arc::clone(&app);
         
-        // check if printer id is acquired
+        // Check if printer ID is acquired
         if !printer_id_acquired {
             let should_update = {
                 let app_guard = app_arc.lock().await;
-                // only update if not registering printer and printer id is missing
+                // Only update if not registering printer and printer ID is missing
                 !app_guard.is_registering_printer && 
                 app_guard.printer_id == "No Printer ID" && 
                 last_update_time.elapsed() >= retry_interval
@@ -79,11 +79,11 @@ async fn run_app<B: ratatui::backend::Backend>(
             
             if should_update {
                 let mut app_guard = app_arc.lock().await;
-                // try to update basic info
+                // Try to update basic info
                 if let Err(e) = app_guard.update_basic_info().await {
                     println!("Failed to update basic info: {}", e);
                 } else if app_guard.printer_id != "No Printer ID" {
-                    // if successfully acquired printer id, mark as acquired
+                    // If successfully acquired printer ID, mark as acquired
                     printer_id_acquired = true;
                     println!("Successfully acquired printer ID: {}", app_guard.printer_id);
                 }
@@ -100,7 +100,7 @@ async fn run_app<B: ratatui::backend::Backend>(
             if let Event::Key(key) = crossterm_event::read()? {
                 let mut app_guard = app_arc.lock().await;
                 if app_guard.is_registering_printer {
-                    // only handle registration related keys on registration page
+                    // Only handle registration related keys on registration page
                     match key.code {
                         KeyCode::Char('q') => return Ok(()),
                         KeyCode::Esc => return Ok(()),
@@ -122,11 +122,11 @@ async fn run_app<B: ratatui::backend::Backend>(
                         _ => {}
                     }
                 } else {
-                    // handle all keys on main page
+                    // Handle all keys on main page
                     match key.code {
                         KeyCode::Char('q') => return Ok(()),
                         KeyCode::Esc => return Ok(()),
-                        // confirm related keys
+                        // Confirmation related keys
                         KeyCode::Char('y') => {
                             if app_guard.is_confirming {
                                 app_guard.confirm_toggle().await?;
@@ -145,7 +145,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 app_guard.start_network_switch();
                             }
                         }
-                        // feature keys
+                        // Feature keys
                         KeyCode::Char('o') => {
                             if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
                                 app_guard.start_toggle_confirm();
@@ -159,10 +159,10 @@ async fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Char('p') => {
                             if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
                                 if app_guard.is_online {
-                                    // 在線模式下處理打印任務
+                                    // Process print tasks in online mode
                                     App::handle_task_print(Arc::clone(&app_arc), false).await?;
                                 } else {
-                                    // 離線模式下處理本地模型
+                                    // Process local models in offline mode
                                     App::handle_model_selection(Arc::clone(&app_arc), false).await?;
                                 }
                             }
@@ -177,15 +177,15 @@ async fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Enter => {
                             if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
                                 if app_guard.is_online {
-                                    // 在線模式下只下載不打印
+                                    // Only download without printing in online mode
                                     App::handle_task_print(Arc::clone(&app_arc), true).await?;
                                 } else {
-                                    // 離線模式下只下載不打印
+                                    // Only download without printing in offline mode
                                     App::handle_model_selection(Arc::clone(&app_arc), true).await?;
                                 }
                             }
                         }
-                        // network switch
+                        // Network switch
                         KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3') => {
                             if app_guard.is_switching_network {
                                 let network_index = match key.code {
