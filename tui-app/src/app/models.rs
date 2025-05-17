@@ -153,7 +153,7 @@ impl App {
                         Err(error_msg) => {
                             app.print_output.push(format!("[LOG] Task print script failed: {}", error_msg));
                             app.set_message(crate::app::MessageType::Error, format!("Failed to start print job: {}", error_msg));
-                            // 即使執行失敗，仍然保持打印狀態
+                            // 即使執行失敗，仍然保持打印狀態 FIXME: Test Only
                             app.print_status = crate::app::PrintStatus::Printing;
                         }
                     }
