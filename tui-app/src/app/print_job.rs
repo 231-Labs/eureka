@@ -108,27 +108,27 @@ impl PrintTask {
         }
     }
 
-    // 計算任務已經過的時間
-    pub fn get_elapsed_time(&self) -> (u64, u64) {
-        let current_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+    // TODO: 計算任務已經過的時間
+    // pub fn get_elapsed_time(&self) -> (u64, u64) {
+    //     let current_time = SystemTime::now()
+    //         .duration_since(UNIX_EPOCH)
+    //         .unwrap_or_default()
+    //         .as_secs();
 
-        let elapsed_time = self.start_time
-            .map(|start| current_time.saturating_sub(start))
-            .unwrap_or(0);
+    //     let elapsed_time = self.start_time
+    //         .map(|start| current_time.saturating_sub(start))
+    //         .unwrap_or(0);
         
-        let elapsed_hours = elapsed_time / 3600;
-        let elapsed_minutes = (elapsed_time % 3600) / 60;
+    //     let elapsed_hours = elapsed_time / 3600;
+    //     let elapsed_minutes = (elapsed_time % 3600) / 60;
 
-        (elapsed_hours, elapsed_minutes)
-    }
+    //     (elapsed_hours, elapsed_minutes)
+    // }
 
-    // 檢查任務是否正在進行中
-    pub fn is_printing(&self) -> bool {
-        matches!(self.status, TaskStatus::Printing)
-    }
+    // // 檢查任務是否正在進行中
+    // pub fn is_printing(&self) -> bool {
+    //     matches!(self.status, TaskStatus::Printing)
+    // }
 
     // 檢查任務是否已完成
     pub fn is_completed(&self) -> bool {

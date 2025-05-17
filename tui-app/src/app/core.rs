@@ -87,9 +87,9 @@ impl App {
             Ok(info) => {
                 info
             },
-            Err(_e  ) => {
+            Err(e) => {
                 PrinterInfo {
-                    id: "No Printer ID".to_string(),
+                    id: e.to_string(),
                     pool_balance: 0,
                 }
             }
@@ -227,25 +227,25 @@ impl App {
 
     pub async fn update_print_tasks(&mut self) -> Result<()> {
         if self.is_online && self.printer_id != "No Printer ID" {
-            // 獲取當前活動的打印任務
+            // Get current active print task
             match self.wallet.get_active_print_job(&self.printer_id).await {
                 Ok(Some(task)) => {
-                    // 檢查是否已經有這個任務
+                    // Check if we already have this task
                     let task_exists = self.tasks.iter().any(|t| t.id == task.id);
                     
                     if !task_exists {
-                        // 如果是新任務，添加到任務列表的開頭
+                        // If it's a new task, add to the beginning of task list
                         self.tasks.insert(0, task.clone());
-                        // 確保選中最新的任務
+                        // Ensure the newest task is selected
                         self.tasks_state.select(Some(0));
-                        // 新任務默認為待機狀態
+                        // New task defaults to idle state
                         self.print_status = PrintStatus::Idle;
                         self.script_status = ScriptStatus::Idle;
                     } else {
-                        // 如果任務已存在，更新其狀態
+                        // If task already exists, update its status
                         if let Some(existing_task) = self.tasks.iter_mut().find(|t| t.id == task.id) {
                             *existing_task = task.clone();
-                            // 只有在腳本正在運行時才設置為打印狀態
+                            // Only set to printing status when script is running
                             if matches!(self.script_status, ScriptStatus::Running) {
                                 self.print_status = PrintStatus::Printing;
                             }
@@ -253,13 +253,13 @@ impl App {
                     }
                 }
                 Ok(None) => {
-                    // 如果沒有活動任務，設置打印機為空閒狀態
+                    // If there's no active task, set printer to idle state
                     self.print_status = PrintStatus::Idle;
                     self.script_status = ScriptStatus::Idle;
                 }
                 Err(e) => {
-                    println!("獲取打印任務時出錯：{:?}", e);
-                    self.set_message(MessageType::Error, format!("獲取打印任務失敗：{}", e));
+                    println!("Error getting print task: {:?}", e);
+                    self.set_message(MessageType::Error, format!("Failed to get print task: {}", e));
                 }
             }
         }

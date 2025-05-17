@@ -9,4 +9,4 @@ pub mod print_job;
 // export App and related types
 pub use core::App;
 pub use core::{RegistrationStatus, MessageType, ScriptStatus, PrintStatus};
-pub use print_job::{PrintTask, TaskStatus};
+pub use print_job::{TaskStatus};
