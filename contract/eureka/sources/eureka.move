@@ -217,6 +217,7 @@ module eureka::eureka {
         clock: &clock::Clock,
     ) {
         assert!(printer_cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
+        assert!(!get_print_job_status_via_printer(printer), EPrintJobCompleted);
 
         mutate_print_job_start_time_via_printer(printer, clock);
         print_sculpt(sculpt, clock);
