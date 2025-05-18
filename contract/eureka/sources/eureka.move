@@ -11,26 +11,29 @@ module eureka::eureka {
         dynamic_object_field as dof,
     };
     use eureka::print_job::{
-        archive_print_job,
+        PrintJob,
         mutate_print_job_status,
         mutate_print_job_start_time,
         get_print_job_status,
         get_print_job_fees,
+        get_print_job_start_time,
         mutate_print_job_end_time,
         get_print_job_id,
         create_print_job,
-        extract_print_job_fees
+        extract_print_job_fees,
     };
     use archimeters::sculpt::{
         Sculpt,
         print_sculpt,
-        get_sculpt_info
+        get_sculpt_info,
+        add_print_record
     };
 
     /// === Errors ===
     const EPrintJobCompleted: u64 = 1;
     const EPrintJobExists: u64 = 2;
     const ENotAuthorized: u64 = 3;
+    const EPrintJobNotStarted: u64 = 4;
 
     /// === One Time Witness ===
     public struct EUREKA has drop {}
@@ -230,11 +233,15 @@ module eureka::eureka {
         sculpt: &mut Sculpt,
         clock: &clock::Clock,
         ctx: &mut TxContext,
-    ) {
+    ) { 
         // check if the printer cap is valid
         assert!(printer_cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
+
         // check if the print job is active (not completed)
         assert!(!get_print_job_status_via_printer(printer), EPrintJobCompleted);
+
+        // check if the print job has been started
+        assert!(*get_print_job_start_time_via_printer(printer) > 0, EPrintJobNotStarted);
         
         // Update job status
         mutate_print_job_status_via_printer(printer);
@@ -249,7 +256,8 @@ module eureka::eureka {
         emit_print_job_completed_event(printer, ctx);
 
         // Archive print job to sculpt
-        archive_print_job(dof::borrow_mut(&mut printer.id, b"print_job"), sculpt, ctx);
+        let print_job = dof::remove<vector<u8>, PrintJob>(&mut printer.id, b"print_job");
+        add_print_record(sculpt, print_job, clock);
     }
 
     // Withdraws accumulated fees from a printer
@@ -299,6 +307,11 @@ module eureka::eureka {
     // Helper function to mutate the end time of a print job
     fun mutate_print_job_end_time_via_printer(printer: &mut Printer, clock: &clock::Clock) {
         mutate_print_job_end_time(dof::borrow_mut(&mut printer.id, b"print_job"), clock);
+    }
+
+    // Gets print job start time via printer
+    fun get_print_job_start_time_via_printer(printer: &Printer): &u64 {
+        get_print_job_start_time(dof::borrow(&printer.id, b"print_job"))
     }
 
     // Gets print job status via printer
