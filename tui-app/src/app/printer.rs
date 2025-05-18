@@ -181,11 +181,30 @@ impl App {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<bool, String>>(1);
         let app_clone = Arc::clone(&app);
         
-        // Check if Gcode-Transmit directory exists before executing script
+        // Get current directory
+        let current_dir = match std::env::current_dir() {
+            Ok(dir) => dir,
+            Err(e) => {
+                let error_msg = format!("Failed to get current directory: {}", e);
+                let mut app_locked = app_clone.lock().await;
+                app_locked.print_output.push(format!("[ERROR] {}", error_msg));
+                app_locked.script_status = ScriptStatus::Failed(error_msg.clone());
+                app_locked.set_message(MessageType::Error, error_msg.clone());
+                return Err(error_msg);
+            }
+        };
+        
+        // 添加調試輸出
         {
-            let transmit_dir = std::path::Path::new("Gcode-Transmit");
+            let mut app_locked = app_clone.lock().await;
+            app_locked.print_output.push(format!("[DEBUG] Current directory: {}", current_dir.display()));
+        }
+        
+        // Check if Gcode-Transmit directory exists before executing script
+        let transmit_dir = current_dir.join("Gcode-Transmit");
+        {
             if !transmit_dir.exists() || !transmit_dir.is_dir() {
-                let error_msg = "Gcode-Transmit directory does not exist".to_string();
+                let error_msg = format!("Gcode-Transmit directory does not exist at {}", transmit_dir.display());
                 let mut app_locked = app_clone.lock().await;
                 app_locked.print_output.push(format!("[ERROR] {}", error_msg));
                 app_locked.script_status = ScriptStatus::Failed(error_msg.clone());
@@ -310,9 +329,17 @@ impl App {
         // immediately show stopping state
         self.set_message(MessageType::Info, "Stopping print...".to_string());
         
+        // 獲取當前執行目錄
+        let current_dir = std::env::current_dir()?;
+        let script_dir = current_dir.join("Gcode-Transmit");
+        
+        // 輸出路徑日誌，以便調試
+        self.print_output.push(format!("[DEBUG] Current directory: {}", current_dir.display()));
+        self.print_output.push(format!("[DEBUG] Script directory: {}", script_dir.display()));
+        
         // use spawn to start command, capture output to display
         let output = match tokio::process::Command::new("sh")
-            .current_dir("Gcode-Transmit")
+            .current_dir(&script_dir)
             .arg("Gcode-Process.sh")
             .arg("--stop")
             .output()

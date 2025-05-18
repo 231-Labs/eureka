@@ -1,6 +1,8 @@
 #!/bin/bash
 
 Options_control="$1"
+# 獲取腳本所在的目錄
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ "$Options_control" == "--print" ]; then
 
@@ -10,15 +12,17 @@ if [ "$Options_control" == "--print" ]; then
     exit 1
   fi
 
-  /home/ubuntu/eureka/tui-app/Gcode-Transmit/main/Gcode-Send.sh &
+  # 使用相對路徑執行子腳本
+  "$SCRIPT_DIR/main/Gcode-Send.sh" &
   wait $!
-  echo $? > /home/ubuntu/eureka/tui-app/Gcode-Transmit/Gcode-Send-Status
+  echo $? > "$SCRIPT_DIR/Gcode-Send-Status"
 
 elif [ "$Options_control" == "--stop" ]; then
 
-  /home/ubuntu/eureka/tui-app/Gcode-Transmit/main/Gcode-Stop.sh
+  # 使用相對路徑執行停止腳本
+  "$SCRIPT_DIR/main/Gcode-Stop.sh"
   wait $!
-  echo $? > /home/ubuntu/eureka/tui-app/Gcode-Transmit/Gcode-Stop-Status
+  echo $? > "$SCRIPT_DIR/Gcode-Stop-Status"
 
 
 elif [ "$Options_control" == "--help" ]; then

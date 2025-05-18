@@ -4,12 +4,28 @@ use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::fs;
+use std::path::Path;
 
 impl App {
     pub async fn download_3d_model(&mut self, blob_id: &str) -> Result<()> {
         let url = format!("{}/v1/blobs/{}", AGGREGATOR_URL, blob_id);
-        let temp_path = "test.stl";
-        let final_path = "Gcode-Transmit/test.stl";
+        
+        // 獲取當前執行目錄
+        let current_dir = std::env::current_dir()?;
+        let temp_path = current_dir.join("test.stl");
+        let final_path = current_dir.join("Gcode-Transmit").join("test.stl");
+        
+        // 輸出路徑日誌，以便調試
+        self.print_output.push(format!("[DEBUG] Current directory: {}", current_dir.display()));
+        self.print_output.push(format!("[DEBUG] Temp file path: {}", temp_path.display()));
+        self.print_output.push(format!("[DEBUG] Final file path: {}", final_path.display()));
+        
+        // 確保目標目錄存在
+        let gcode_dir = current_dir.join("Gcode-Transmit");
+        if !Path::new(&gcode_dir).exists() {
+            self.print_output.push(format!("[DEBUG] Creating directory: {}", gcode_dir.display()));
+            fs::create_dir_all(&gcode_dir)?;
+        }
         
         // download to temporary file
         let status = tokio::process::Command::new("curl")
@@ -17,7 +33,7 @@ impl App {
             .arg("-S")
             .arg(&url)
             .arg("-o")
-            .arg(temp_path)
+            .arg(&temp_path)
             .status()
             .await?;
 
@@ -27,7 +43,7 @@ impl App {
         }
 
         // move file to target directory
-        if let Err(e) = fs::rename(temp_path, final_path) {
+        if let Err(e) = fs::rename(&temp_path, &final_path) {
             self.set_message(crate::app::MessageType::Error, format!("Failed to move 3D model: {}", e));
             return Err(anyhow::anyhow!("Failed to move 3D model: {}", e));
         }

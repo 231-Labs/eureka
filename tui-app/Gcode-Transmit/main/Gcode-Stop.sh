@@ -1,7 +1,10 @@
 #!/bin/bash
-cd "$(dirname "$0")"
-PID_File_Path="~/eureka/tui-app/Gcode-Transmit/main/Gcode-Send-PID.pid"
-# PID_File_Path="./Gcode-Send-PID.pid"
+# 獲取腳本所在的目錄
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# 使用相對路徑獲取PID文件
+PID_File_Path="$SCRIPT_DIR/Gcode-Send-PID.pid"
 USB_Device="/dev/3Dprinter"
 
 # 檢查 Printer 是否連接
