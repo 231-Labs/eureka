@@ -2,6 +2,8 @@ module eureka::eureka {
 
     use std::string::{ String };
     use sui::{ 
+        package,
+        display,
         event,
         vec_set::{ Self, VecSet },
         balance::{ Self, Balance },
@@ -35,10 +37,6 @@ module eureka::eureka {
     const ENotAuthorized: u64 = 3;
     const EPrintJobNotStarted: u64 = 4;
 
-    /// === One Time Witness ===
-    public struct EUREKA has drop {}
-
-
     /// === Structs ===
     
     /// Registry for all printers in the system
@@ -60,6 +58,9 @@ module eureka::eureka {
         id: UID,
         printer_id: ID,
     }
+
+    /// === One Time Witness ===
+    public struct EUREKA has drop {}
 
     /// === Events ===
      
@@ -91,17 +92,38 @@ module eureka::eureka {
         new_status: bool,
     }
 
-    /// === Initialization ===
+    /// === Initializer ===
     
     /// Initializes the module with a registry
     fun init(otw: EUREKA, ctx: &mut TxContext) {
+        let publisher = package::claim(otw, ctx);
+        let mut display = display::new<Printer>(&publisher, ctx);
         let registry = PrinterRegistry {
             id: object::new(ctx),
             printers: vec_set::empty(),
         };
 
+        display.add(
+            b"name".to_string(),
+            b"{alias}".to_string()
+        );
+
+        display.add(
+            b"description".to_string(),
+            b"Eureka!".to_string()
+        );
+
+        display.add(
+            b"image_url".to_string(),
+            b"https://aggregator.walrus-testnet.walrus.space/v1/blobs/fKj0Fgc3I4ty1VxS3NpW4rasQ1FXIXIi9dPhq2uwwHo"
+            .to_string()
+        );
+        
+        display.update_version();
+        
         transfer::share_object(registry);
-        let EUREKA {} = otw;
+        transfer::public_transfer(publisher, ctx.sender());
+        transfer::public_transfer(display, ctx.sender());
     }
 
     /// === Public Entry Functions ===
@@ -376,7 +398,6 @@ module eureka::eureka {
     public fun get_printer_status(printer: &Printer): bool {
         printer.online
     }
-
 
     /// === Test Only Functions ===
     #[test_only]

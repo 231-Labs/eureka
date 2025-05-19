@@ -58,11 +58,12 @@ module archimeters::archimeters {
         );
         display.add(
             b"description".to_string(),
-            b"Your access to the parametric design world".to_string()
+            b"Welcome Aboard".to_string()
         );
         display.add(
             b"image_url".to_string(),
-            b"https://aggregator.walrus-testnet.walrus.space/v1/blobs/d3ElFh07L2aZFHgFASwsIkn_WHnjnNHSz0U8SlbTi_Q".to_string()
+            b"https://aggregator.walrus-testnet.walrus.space/v1/blobs/d3ElFh07L2aZFHgFASwsIkn_WHnjnNHSz0U8SlbTi_Q"
+            .to_string()
         );
 
         display.update_version();
