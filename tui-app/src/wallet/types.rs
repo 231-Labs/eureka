@@ -5,6 +5,7 @@ pub struct SculptItem {
     pub alias: String,
     pub blob_id: String,
     pub printed_count: u64,
+    pub id: String,
 }
 
 #[derive(Debug, Clone)]

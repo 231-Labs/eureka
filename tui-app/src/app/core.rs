@@ -102,6 +102,7 @@ impl App {
                 alias: "Error loading models".to_string(),
                 blob_id: String::new(),
                 printed_count: 0,
+                id: String::new(),
             }]
         };
         

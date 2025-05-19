@@ -34,15 +34,32 @@ impl Wallet {
             )
             .await?;
 
+        // println!("[DEBUG] Found {} sculpt objects", response.data.len());
+        
+        // for obj in response.data.iter() {
+        //     if let Some(data) = &obj.data {
+        //         println!("[DEBUG] Sculpt object ID: {}", data.object_id);
+        //         if let Some(content) = &data.content {
+        //             println!("[DEBUG] Content: {:?}", content);
+        //         }
+        //     }
+        // }
+
         let sculpt_items: Vec<SculptItem> = response.data.iter()
             .filter_map(|obj| self.parse_sculpt_object(obj))
             .collect();
+
+        // println!("[DEBUG] Parsed {} sculpt items:", sculpt_items.len());
+        // for item in &sculpt_items {
+        //     println!("[DEBUG] - ID: {}, Alias: {}, Blob ID: {}", item.id, item.alias, item.blob_id);
+        // }
 
         Ok(if sculpt_items.is_empty() {
             vec![SculptItem {
                 alias: "No printable models found".to_string(),
                 blob_id: String::new(),
                 printed_count: 0,
+                id: String::new(),
             }]
         } else {
             let mut items = sculpt_items;
@@ -53,6 +70,8 @@ impl Wallet {
 
     // Parse sculpt object from response
     fn parse_sculpt_object(&self, obj: &sui_sdk::rpc_types::SuiObjectResponse) -> Option<SculptItem> {
+        let object_id = obj.data.as_ref()?.object_id.to_string();
+        
         obj.data.as_ref()
             .and_then(|data| data.content.as_ref())
             .and_then(|content| match content {
@@ -80,6 +99,7 @@ impl Wallet {
                             alias: alias_str.clone(),
                             blob_id: structure_id.clone(),
                             printed_count: printed_str.parse::<u64>().unwrap_or(0),
+                            id: object_id,
                         })
                     },
                     _ => None,

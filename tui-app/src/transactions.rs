@@ -13,6 +13,8 @@ use sui_sdk::{
         SuiObjectDataOptions,
         SuiObjectRef,
         SuiTransactionBlockResponseOptions,
+        SuiTransactionBlockResponse,
+        SuiTransactionBlockEffectsAPI,
     },
     types::{
         base_types::{
@@ -147,7 +149,7 @@ impl TransactionExecutor {
     }
     
     /// Sign and execute a transaction
-    async fn sign_and_execute(&self, tx_data: TransactionData) -> Result<String> {
+    async fn sign_and_execute(&self, tx_data: TransactionData) -> Result<SuiTransactionBlockResponse> {
         // Sign transaction
         let keystore_path = PathBuf::from(std::env::var("HOME")?).join(".sui").join("sui_config").join("sui.keystore");
         let keystore = FileBasedKeystore::new(&keystore_path)?;
@@ -163,7 +165,7 @@ impl TransactionExecutor {
             )
             .await?;
 
-        Ok(transaction_response.digest.base58_encode())
+        Ok(transaction_response)
     }
     
     /// Execute a move call
@@ -210,9 +212,17 @@ impl TransactionExecutor {
         let tx_data = self.build_transaction(ptb, coin, gas_config).await?;
         
         // Sign and execute
-        let tx_digest = self.sign_and_execute(tx_data).await?;
+        let tx_response = self.sign_and_execute(tx_data).await?;
         
-        Ok(tx_digest)
+        // 檢查交易是否成功
+        if let Some(effects) = &tx_response.effects {
+            if !effects.status().is_ok() {
+                let error_detail = format!("{:?}", effects.status());
+                return Err(anyhow!("Transaction failed: {}", error_detail));
+            }
+        }
+        
+        Ok(tx_response.digest.base58_encode())
     }
 }
 
@@ -315,6 +325,33 @@ impl TransactionBuilder {
         }))
     }
 
+    /// create owned object argument
+    async fn create_owned_object_arg(&self, object_id: ObjectID) -> Result<CallArg> {
+        // get object information
+        let object_response = self.executor.sui_client
+            .read_api()
+            .get_object_with_options(object_id, SuiObjectDataOptions {
+                show_owner: true,
+                show_content: false,
+                show_display: false,
+                show_bcs: false,
+                show_storage_rebate: false,
+                show_previous_transaction: false,
+                show_type: true,
+            })
+            .await?;
+        
+        let object_data = object_response.data
+            .ok_or_else(|| anyhow!("Object not found"))?;
+            
+        // create owned object argument
+        Ok(CallArg::Object(ObjectArg::ImmOrOwnedObject((
+            object_id,
+            object_data.version,
+            object_data.digest,
+        ))))
+    }
+
     /// execute Move call
     async fn execute_eureka_call(
         &self,
@@ -362,7 +399,7 @@ impl TransactionBuilder {
     ) -> Result<String> {
         let cap_arg = self.create_printer_cap_arg(printer_cap_id).await?;
         let printer_arg = self.create_shared_object_arg(printer_id, true).await?;
-        let sculpt_arg = self.create_shared_object_arg(sculpt_id, false).await?;
+        let sculpt_arg = self.create_owned_object_arg(sculpt_id).await?;
         let clock_arg = self.create_clock_arg().await?;
         
         self.execute_eureka_call(
@@ -379,12 +416,27 @@ impl TransactionBuilder {
     ) -> Result<String> {
         let cap_arg = self.create_printer_cap_arg(printer_cap_id).await?;
         let printer_arg = self.create_shared_object_arg(printer_id, true).await?;
-        let sculpt_arg = self.create_shared_object_arg(sculpt_id, true).await?;
+        let sculpt_arg = self.create_owned_object_arg(sculpt_id).await?;
         let clock_arg = self.create_clock_arg().await?;
         
         self.execute_eureka_call(
             "complete_print_job",
             vec![cap_arg, printer_arg, sculpt_arg, clock_arg],
+        ).await
+    }
+
+    /// Create and assign a free print job
+    pub async fn create_and_assign_print_job_free(
+        &self,
+        printer_id: ObjectID,
+        sculpt_id: ObjectID,
+    ) -> Result<String> {
+        let printer_arg = self.create_shared_object_arg(printer_id, true).await?;
+        let sculpt_arg = self.create_owned_object_arg(sculpt_id).await?;
+        
+        self.execute_eureka_call(
+            "create_and_assign_print_job_free",
+            vec![printer_arg, sculpt_arg],
         ).await
     }
     

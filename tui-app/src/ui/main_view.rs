@@ -134,8 +134,8 @@ pub fn draw_main(f: &mut Frame, app: &mut App) {
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),   // Message display area reduced to 3 lines
-            Constraint::Length(21),  // Main print job status increased to 21 lines
+            Constraint::Length(6),   // Message display area increased to 6 lines
+            Constraint::Length(21),  // Main print job status
             Constraint::Min(0),      // Bottom area - Print output log
         ])
         .split(content_layout[1]);
@@ -459,6 +459,18 @@ fn render_help_controls(f: &mut Frame, app: &App, area: Rect, dim_color: Color, 
                 Span::raw("   "),
                 Span::styled("E", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
                 Span::raw(" Stop Printing"),
+                Span::raw("   "),
+                // FIXME: test only
+                Span::styled("C", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+                Span::raw(" Create Job"),
+                Span::raw("   "),
+                // FIXME: test only
+                Span::styled("T", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+                Span::raw(" Test Job"),
+                Span::raw("   "),
+                // FIXME: test only
+                Span::styled("F", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+                Span::raw(" Finish Job"),
             ]),
         ]
     };
