@@ -21,7 +21,8 @@ impl App {
         let app_clone = Arc::clone(&app);
         
         // Get current directory
-        let current_dir = match std::env::current_dir() {
+        let current_dir = match std::env::current_dir()
+        {
             Ok(dir) => dir,
             Err(e) => {
                 let error_msg = format!("Failed to get current directory: {}", e);
@@ -55,7 +56,8 @@ impl App {
             } else {
                 let selected_index = app_guard.sculpt_state.selected();
                 if selected_index.is_none() || selected_index.unwrap() >= app_guard.sculpt_items
-                .len() { drop(app_guard) }
+                .len()
+                { drop(app_guard) }
                 else {
                     match app_guard.test_start_print_job().await {
                         Err(e) => app_guard.print_output
