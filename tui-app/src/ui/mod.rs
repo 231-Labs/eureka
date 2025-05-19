@@ -6,6 +6,8 @@ mod registration;
 mod main_view;
 mod status_display;
 mod utils;
+mod animations;
 
 // Re-export the public functions
-pub use draw::draw; 
+pub use draw::draw;
+pub use animations::*; 

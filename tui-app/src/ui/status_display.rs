@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::app::{App, TaskStatus, PrintStatus};
 use crate::constants::{PRINTER_ACTIVE_FRAMES, PRINTER_IDLE_FRAMES};
 use super::utils::split_ascii_art;
+use super::animations::get_printer_animation_frames;
 
 /// Renders the online mode active task display
 pub fn render_online_active_task(f: &mut Frame, app: &mut App, area: Rect, time: u64) {
@@ -57,15 +58,8 @@ pub fn render_online_active_task(f: &mut Frame, app: &mut App, area: Rect, time:
             Line::from("").alignment(Alignment::Center),
         ];
 
-        // Choose animation based on printer status
-        let frames = if matches!(app.print_status, PrintStatus::Printing) {
-            // Printing status - show active animation
-            split_ascii_art(PRINTER_ACTIVE_FRAMES[animation_frame], Color::Cyan)
-        } else {
-            // Standby status - show idle animation
-            split_ascii_art(PRINTER_IDLE_FRAMES[animation_frame], Color::Cyan)
-        };
-        task_info.extend(frames);
+        // Add printer animation frames
+        task_info.extend(get_printer_animation_frames(app, animation_frame, Color::Cyan));
 
         task_info.extend(vec![
             Line::from(vec![

@@ -7,12 +7,17 @@ use ratatui::{
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::app::App;
-use crate::constants::EUREKA_FRAMES;
 use super::status_display::{render_online_active_task, render_offline_printer};
+use super::animations::{render_eureka_animation, render_tech_animation, render_ambient_noise};
 use textwrap;
 
 /// Render the main application UI
 pub fn draw_main(f: &mut Frame, app: &mut App) {
+    let time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
     // Get theme colors
     let (primary_color, secondary_color, accent_color) = if app.is_online {
         (Color::Cyan, Color::LightBlue, Color::DarkGray)  // Tech cool colors
@@ -47,15 +52,7 @@ pub fn draw_main(f: &mut Frame, app: &mut App) {
         .split(f.size());
 
     // Add EUREKA ASCII art animation
-    let time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let animation_frame = (time % 3) as usize;
-    let ascii_art = Paragraph::new(EUREKA_FRAMES[animation_frame])
-        .style(Style::default().fg(highlight_color))
-        .alignment(Alignment::Center);
-    f.render_widget(ascii_art, main_layout[0]);
+    render_eureka_animation(f, main_layout[0], highlight_color);
 
     // System status indicators
     let status_indicators = Layout::default()
@@ -292,21 +289,6 @@ fn render_status_toggle(f: &mut Frame, app: &App, area: Rect, primary_color: Col
     f.render_widget(status, area);
 }
 
-fn render_tech_animation(f: &mut Frame, app: &App, area: Rect, primary_color: Color) {
-    let tech_block = Block::default()
-        .title("SYSTEM")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(primary_color));
-    
-    let tech_text = Paragraph::new(app.get_tech_animation())
-        .style(Style::default().fg(if app.is_online { Color::Cyan } else { Color::Magenta }))
-        .alignment(Alignment::Center)
-        .block(tech_block);
-    
-    f.render_widget(tech_text, area);
-}
-
 fn render_task_list(
     f: &mut Frame, 
     app: &mut App, 
@@ -486,26 +468,6 @@ fn render_help_controls(f: &mut Frame, app: &App, area: Rect, dim_color: Color, 
         .block(help_block);
         
     f.render_widget(help, area);
-}
-
-fn render_ambient_noise(f: &mut Frame, time: u64, dim_color: Color) {
-    // Simulate spaceship ambient noise effect
-    for _ in 0..15 {
-        let noise_char = match time % 3 {
-            0 => "▓",
-            1 => "▒",
-            _ => "░",
-        };
-        
-        let x = (time * 7 + 11) % (f.size().width as u64 - 4) + 2;
-        let y = (time * 13 + 5) % (f.size().height as u64 - 4) + 2;
-        
-        if x < f.size().width as u64 && y < f.size().height as u64 {
-            let noise = Paragraph::new(noise_char)
-                .style(Style::default().fg(dim_color));
-            f.render_widget(noise, Rect::new(x as u16, y as u16, 1, 1));
-        }
-    }
 }
 
 /// Renders the print output log
