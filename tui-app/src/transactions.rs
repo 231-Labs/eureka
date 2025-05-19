@@ -265,18 +265,14 @@ impl TransactionBuilder {
         ).await
     }
     
-    /// Update printer status
-    pub async fn update_printer_status(
-        &self,
-        printer_cap_id: ObjectID,
-        printer_id: ObjectID,
-    ) -> Result<String> {
+    /// validate and create PrinterCap argument
+    async fn create_printer_cap_arg(&self, printer_cap_id: ObjectID) -> Result<CallArg> {
         // get PrinterCap object information
         let cap_response = self.executor.sui_client
             .read_api()
             .get_object_with_options(printer_cap_id, SuiObjectDataOptions {
                 show_owner: true,
-                show_content: true,
+                show_content: false,
                 show_display: false,
                 show_bcs: false,
                 show_storage_rebate: false,
@@ -288,7 +284,7 @@ impl TransactionBuilder {
         let cap_data = cap_response.data
             .ok_or_else(|| anyhow!("PrinterCap object not found"))?;
             
-        // 確保 PrinterCap 屬於發送者
+        // check if PrinterCap is owned by the sender
         if let Some(Owner::AddressOwner(addr)) = cap_data.owner {
             if addr != self.executor.sender {
                 return Err(anyhow!("PrinterCap is owned by a different address"));
@@ -297,61 +293,56 @@ impl TransactionBuilder {
             return Err(anyhow!("PrinterCap has an invalid ownership type"));
         }
         
-        // 創建 PrinterCap 參數
-        let cap_arg = CallArg::Object(ObjectArg::ImmOrOwnedObject((
+        // create PrinterCap argument
+        Ok(CallArg::Object(ObjectArg::ImmOrOwnedObject((
             printer_cap_id,
             cap_data.version,
             cap_data.digest,
-        )));
+        ))))
+    }
+
+    /// create shared object argument
+    async fn create_shared_object_arg(&self, object_id: ObjectID, mutable: bool) -> Result<CallArg> {
+        let version = self.executor.get_shared_object(object_id).await?;
         
-        // 獲取 Printer 對象信息
-        let object_response = self.executor.sui_client
-            .read_api()
-            .get_object_with_options(printer_id, SuiObjectDataOptions {
-                show_owner: true,
-                show_content: true,
-                show_display: false,
-                show_bcs: false,
-                show_storage_rebate: false,
-                show_previous_transaction: false,
-                show_type: true,
-            })
-            .await?;
-        
-        let object_data = object_response.data
-            .ok_or_else(|| anyhow!("Printer object not found"))?;
-        
-        // 檢查對象所有權
-        let owner = object_data.owner
-            .ok_or_else(|| anyhow!("Printer object has no owner information"))?;
-        
-        // 創建 Printer 參數
-        let printer_arg = match owner {
-            Owner::Shared { initial_shared_version } => {
-                // 使用 SharedObject 類型參數
-                CallArg::Object(ObjectArg::SharedObject {
-                    id: printer_id,
-                    initial_shared_version,
-                    mutable: true,
-                })
-            },
-            _ => return Err(anyhow!("Printer should be a shared object")),
-        };
-        
-        // 獲取包 ID
+        Ok(CallArg::Object(ObjectArg::SharedObject {
+            id: object_id,
+            initial_shared_version: version.into(),
+            mutable,
+        }))
+    }
+
+    /// execute Move call
+    async fn execute_eureka_call(
+        &self,
+        function: &str,
+        args: Vec<CallArg>,
+    ) -> Result<String> {
         let package_id = ObjectID::from_hex_literal(&self.network_state.get_current_package_ids().eureka_package_id)?;
         
-        // 執行 move 調用
-        let tx_digest = self.executor.execute_move_call(
+        self.executor.execute_move_call(
             package_id,
             "eureka",
-            "update_printer_status",
+            function,
             vec![],
-            vec![cap_arg, printer_arg],
+            args,
             None,
-        ).await?;
+        ).await
+    }
+
+    /// Update printer status
+    pub async fn update_printer_status(
+        &self,
+        printer_cap_id: ObjectID,
+        printer_id: ObjectID,
+    ) -> Result<String> {
+        let cap_arg = self.create_printer_cap_arg(printer_cap_id).await?;
+        let printer_arg = self.create_shared_object_arg(printer_id, true).await?;
         
-        Ok(tx_digest)
+        self.execute_eureka_call(
+            "update_printer_status",
+            vec![cap_arg, printer_arg],
+        ).await
     }
     
     // add new transaction methods, for example:
