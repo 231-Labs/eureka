@@ -7,7 +7,7 @@ use ratatui::{
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::app::{App, RegistrationStatus};
-use crate::constants::{EUREKA_FRAMES, BUILD_ON_SUI};
+use super::ascii_arts::{EUREKA_FRAMES, UiConstants};
 
 /// Renders the printer registration UI
 pub fn draw_registration(f: &mut Frame, app: &mut App) {
@@ -66,7 +66,7 @@ pub fn draw_registration(f: &mut Frame, app: &mut App) {
     f.render_widget(network_info, status_indicators[0]);
     
     // Build on Sui
-    let build_on_sui_text = format!("╔══════╡ {} ╞══════╗", BUILD_ON_SUI.to_uppercase());
+    let build_on_sui_text = format!("╔══════╡ {} ╞══════╗", UiConstants::BUILD_ON_SUI.to_uppercase());
     let build_on_sui = Paragraph::new(build_on_sui_text)
         .style(Style::default().fg(base_color))
         .alignment(Alignment::Center);

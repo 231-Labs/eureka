@@ -1,13 +1,13 @@
 use ratatui::{
     layout::{Rect, Alignment},
     style::{Color, Style},
-    text::{Line, Span},
+    text::{Line},
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::app::App;
-use crate::constants::{EUREKA_FRAMES, PRINTER_ACTIVE_FRAMES, PRINTER_IDLE_FRAMES};
+use super::ascii_arts::{EUREKA_FRAMES, PRINTER_ACTIVE_FRAMES, PRINTER_IDLE_FRAMES};
 use super::utils::split_ascii_art;
 
 /// 渲染 EUREKA ASCII 藝術動畫

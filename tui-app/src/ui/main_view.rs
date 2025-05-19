@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::app::App;
 use super::status_display::{render_online_active_task, render_offline_printer};
 use super::animations::{render_eureka_animation, render_tech_animation, render_ambient_noise};
+use super::ascii_arts::UiConstants;
 use textwrap;
 
 /// Render the main application UI
@@ -65,21 +66,21 @@ pub fn draw_main(f: &mut Frame, app: &mut App) {
         .split(main_layout[1]);
         
     // Display current network
-    let network_status = format!("[■■■■■□□□□□] NETWORK: {}", app.network_state.get_current_network().to_uppercase());
+    let network_status = format!("{} NETWORK: {}", UiConstants::NETWORK_PROGRESS, app.network_state.get_current_network().to_uppercase());
     let network_info = Paragraph::new(network_status)
         .style(Style::default().fg(base_color))
         .alignment(Alignment::Center);
     f.render_widget(network_info, status_indicators[0]);
     
     // Build on Sui
-    let build_on_sui_text = format!("╔══════╡ {} ╞══════╗", crate::constants::BUILD_ON_SUI.to_uppercase());
+    let build_on_sui_text = format!("╔══════╡ {} ╞══════╗", UiConstants::BUILD_ON_SUI.to_uppercase());
     let build_on_sui = Paragraph::new(build_on_sui_text)
         .style(Style::default().fg(base_color))
         .alignment(Alignment::Center);
     f.render_widget(build_on_sui, status_indicators[1]);
     
     // Display wallet address
-    let wallet_status = format!("[■■■■■■■□□□] WALLET: {}", app.wallet_address);
+    let wallet_status = format!("{} WALLET: {}", UiConstants::WALLET_PROGRESS, app.wallet_address);
     let wallet_info = Paragraph::new(wallet_status)
         .style(Style::default().fg(base_color))
         .alignment(Alignment::Center);

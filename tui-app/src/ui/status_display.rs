@@ -7,7 +7,7 @@ use ratatui::{
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::app::{App, TaskStatus, PrintStatus};
-use crate::constants::{PRINTER_ACTIVE_FRAMES, PRINTER_IDLE_FRAMES};
+use super::ascii_arts::{PRINTER_ACTIVE_FRAMES, PRINTER_IDLE_FRAMES};
 use super::utils::split_ascii_art;
 use super::animations::get_printer_animation_frames;
 
