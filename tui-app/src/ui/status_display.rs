@@ -63,7 +63,7 @@ pub fn render_online_active_task(f: &mut Frame, app: &mut App, area: Rect, time:
 
         task_info.extend(vec![
             Line::from(vec![
-                Span::styled("SCULPT ID: ", Style::default().fg(dim_color)),
+                Span::styled("BLOB ID: ", Style::default().fg(dim_color)),
                 Span::styled(task.get_short_sculpt_id(), Style::default().fg(secondary_color)),
             ]).alignment(Alignment::Center),
             Line::from(vec![
@@ -224,7 +224,7 @@ pub fn render_offline_printer(f: &mut Frame, app: &mut App, area: Rect, time: u6
                 printing_text.extend(vec![
                     Line::from("").alignment(Alignment::Center),
                     Line::from(vec![
-                        Span::styled("SCULPT ID: ", Style::default().fg(dim_color)),
+                        Span::styled("BLOB ID: ", Style::default().fg(dim_color)),
                         Span::styled(&sculpt.blob_id, Style::default().fg(secondary_color)),
                     ]).alignment(Alignment::Center),
                     Line::from(vec![

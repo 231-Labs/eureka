@@ -10,7 +10,7 @@ pub enum TaskStatus {
 pub struct PrintTask {
     pub id: String,
     pub name: String,
-    pub sculpt_id: String,
+    pub sculpt_blob_id: String,
     pub sculpt_structure: String,
     pub customer: String,
     pub paid_amount: u64,
@@ -20,34 +20,7 @@ pub struct PrintTask {
 }
 
 impl PrintTask {
-    pub fn new_mock_tasks() -> Vec<PrintTask> {
-        vec![
-            PrintTask {
-                id: "task_001".to_string(),
-                name: "Benchy 3D".to_string(),
-                sculpt_id: "0x123...abc".to_string(),
-                sculpt_structure: "Standard".to_string(),
-                customer: "0x598...fbd".to_string(),
-                paid_amount: 1_000_000_000, // 1 SUI
-                start_time: Some(1709856000), // Unix timestamp
-                end_time: Some(1709859600), // 完成時間設為開始時間 + 1 小時
-                status: TaskStatus::Completed,
-            },
-            PrintTask {
-                id: "task_002".to_string(),
-                name: "Calibration Cube".to_string(),
-                sculpt_id: "0x456...def".to_string(),
-                sculpt_structure: "Basic".to_string(),
-                customer: "0x598...fbd".to_string(),
-                paid_amount: 500_000_000, // 0.5 SUI
-                start_time: Some(1709852400),
-                end_time: Some(1709856000),
-                status: TaskStatus::Completed,
-            },
-        ]
-    }
-
-    // 格式化結束時間為顯示字符串
+    // format end time to display string
     pub fn format_end_time(&self) -> String {
         if let Some(end_time) = self.end_time {
             if end_time > 0 {
@@ -59,7 +32,7 @@ impl PrintTask {
                     let days = total_seconds / (24 * 3600);
                     
                     return format!("{:02}-{:02} {:02}:{:02}", 
-                        days % 31 + 1,  // 簡單的月日顯示
+                        days % 31 + 1,  // simple month and day display
                         days % 12 + 1, 
                         hours,
                         minutes);
@@ -69,7 +42,7 @@ impl PrintTask {
         "Pending".to_string()
     }
 
-    // 格式化已運行時間
+    // format elapsed time
     pub fn format_elapsed_time(&self) -> String {
         let elapsed = if let Some(start) = self.start_time {
             let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
@@ -85,12 +58,12 @@ impl PrintTask {
         format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
     }
 
-    // 格式化支付金額
+    // format paid amount
     pub fn format_paid_amount(&self) -> String {
         format!("{:.2} SUI", self.paid_amount as f64 / 1_000_000_000.0)
     }
 
-    // 獲取簡短的客戶地址顯示
+    // get short customer address display
     pub fn get_short_customer(&self) -> String {
         if self.customer.len() > 12 {
             format!("{}...{}", &self.customer[0..6], &self.customer[self.customer.len()-6..])
@@ -99,16 +72,16 @@ impl PrintTask {
         }
     }
 
-    // 獲取簡短的模型 ID 顯示
+    // get short sculpt id display
     pub fn get_short_sculpt_id(&self) -> String {
-        if self.sculpt_id.len() > 12 {
-            format!("{}...{}", &self.sculpt_id[0..6], &self.sculpt_id[self.sculpt_id.len()-6..])
+        if self.sculpt_blob_id.len() > 12 {
+            format!("{}...{}", &self.sculpt_blob_id[0..6], &self.sculpt_blob_id[self.sculpt_blob_id.len()-6..]) // TODO: change to 1
         } else {
-            self.sculpt_id.clone()
+            self.sculpt_blob_id.clone()
         }
     }
 
-    // TODO: 計算任務已經過的時間
+    // TODO: calculate elapsed time
     // pub fn get_elapsed_time(&self) -> (u64, u64) {
     //     let current_time = SystemTime::now()
     //         .duration_since(UNIX_EPOCH)
@@ -125,13 +98,41 @@ impl PrintTask {
     //     (elapsed_hours, elapsed_minutes)
     // }
 
-    // // 檢查任務是否正在進行中
+    // // check if task is printing
     // pub fn is_printing(&self) -> bool {
     //     matches!(self.status, TaskStatus::Printing)
     // }
 
-    // 檢查任務是否已完成
+    // check if task is completed
     pub fn is_completed(&self) -> bool {
         matches!(self.status, TaskStatus::Completed)
+    }
+
+    // Create mock tasks for testing UI
+    pub fn new_mock_tasks() -> Vec<PrintTask> {
+        vec![
+            PrintTask {
+                id: "0x123456789abcdef123456789abcdef".to_string(),
+                name: "Cool Vase".to_string(),
+                sculpt_blob_id: "0xabcdef123456789abcdef123456789a".to_string(),
+                sculpt_structure: "STL".to_string(),
+                customer: "0xabc123def456abc123def456abc123de".to_string(),
+                paid_amount: 1500000000, // 1.5 SUI
+                start_time: Some(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() - 3600),
+                end_time: Some(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() - 600),
+                status: TaskStatus::Completed,
+            },
+            PrintTask {
+                id: "0x987654321fedcba987654321fedcba".to_string(),
+                name: "Cute Robot".to_string(),
+                sculpt_blob_id: "0xfedcba987654321fedcba98765432".to_string(),
+                sculpt_structure: "STL".to_string(),
+                customer: "0xabc123def456abc123def456abc123de".to_string(),
+                paid_amount: 2000000000, // 2.0 SUI
+                start_time: Some(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() - 7200),
+                end_time: Some(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() - 1800),
+                status: TaskStatus::Completed,
+            },
+        ]
     }
 } 

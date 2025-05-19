@@ -34,25 +34,9 @@ impl Wallet {
             )
             .await?;
 
-        // println!("[DEBUG] Found {} sculpt objects", response.data.len());
-        
-        // for obj in response.data.iter() {
-        //     if let Some(data) = &obj.data {
-        //         println!("[DEBUG] Sculpt object ID: {}", data.object_id);
-        //         if let Some(content) = &data.content {
-        //             println!("[DEBUG] Content: {:?}", content);
-        //         }
-        //     }
-        // }
-
         let sculpt_items: Vec<SculptItem> = response.data.iter()
             .filter_map(|obj| self.parse_sculpt_object(obj))
             .collect();
-
-        // println!("[DEBUG] Parsed {} sculpt items:", sculpt_items.len());
-        // for item in &sculpt_items {
-        //     println!("[DEBUG] - ID: {}, Alias: {}, Blob ID: {}", item.id, item.alias, item.blob_id);
-        // }
 
         Ok(if sculpt_items.is_empty() {
             vec![SculptItem {

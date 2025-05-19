@@ -39,7 +39,7 @@ pub fn extract_print_task(fields: &BTreeMap<String, SuiMoveValue>) -> Result<Pri
     Ok(PrintTask {
         id,
         name: sculpt_alias,
-        sculpt_id,
+        sculpt_blob_id: sculpt_id,
         sculpt_structure,
         customer,
         paid_amount,

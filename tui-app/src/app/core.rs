@@ -185,10 +185,6 @@ impl App {
         }
     }
 
-    pub fn clear_print_output(&mut self) {
-        self.print_output.clear();
-    }
-
     pub async fn update_basic_info(&mut self) -> Result<()> {
         // try to get latest info from blockchain
         let address = self.wallet.get_active_address().await?;
