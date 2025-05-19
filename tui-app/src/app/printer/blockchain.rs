@@ -6,7 +6,7 @@ use sui_sdk::types::base_types::ObjectID;
 
 impl App {
     pub async fn test_start_print_job(&mut self) -> Result<(), String> {
-        // 獲取當前選中的 sculpt item
+        // get selected sculpt item
         let selected_index = match self.sculpt_state.selected() {
             Some(index) => index,
             None => {
@@ -58,7 +58,7 @@ impl App {
                             }
                         };
                         
-                        // 發送交易並處理結果
+                        // send transaction and handle result
                         self.set_message(MessageType::Info, "Starting print job, waiting for blockchain confirmation...".to_string());
                         
                         match builder.start_print_job(printer_cap_id, printer_object_id, sculpt_id).await {
@@ -72,7 +72,7 @@ impl App {
                             Err(e) => {
                                 let error_msg = e.to_string();
                                 
-                                // 根據錯誤類型提供用戶友好的錯誤信息
+                                // provide user-friendly error message based on error type
                                 let user_friendly_error = if error_msg.contains("TransactionEffects") && error_msg.contains("status") {
                                     if error_msg.contains("dynamic_field") && error_msg.contains("borrow_child_object") {
                                         "Failed to find print job. Please make sure printer is properly registered.".to_string()
@@ -102,7 +102,7 @@ impl App {
     }
 
     pub async fn test_create_print_job(&mut self) -> Result<(), String> {
-        // 獲取當前選中的 sculpt item
+        // get selected sculpt item
         let selected_index = match self.sculpt_state.selected() {
             Some(index) => index,
             None => {
@@ -145,7 +145,7 @@ impl App {
                     }
                 };
                 
-                // 發送交易並處理結果
+                // send transaction and handle result
                 self.set_message(MessageType::Info, "Creating print job, waiting for blockchain confirmation...".to_string());
                 
                 match builder.create_and_assign_print_job_free(printer_object_id, sculpt_id).await {
@@ -159,7 +159,7 @@ impl App {
                     Err(e) => {
                         let error_msg = e.to_string();
                         
-                        // 根據錯誤類型提供用戶友好的錯誤信息
+                        // provide user-friendly error message based on error type
                         let user_friendly_error = if error_msg.contains("TransactionEffects") && error_msg.contains("status") {
                             if error_msg.contains("EPrintJobExists") {
                                 "A print job already exists for this printer.".to_string()
@@ -248,7 +248,7 @@ impl App {
                             Err(e) => {
                                 let error_msg = e.to_string();
                                 
-                                // 根據錯誤類型提供用戶友好的錯誤信息
+                                // provide user-friendly error message based on error type
                                 let user_friendly_error = if error_msg.contains("TransactionEffects") && error_msg.contains("status") {
                                     if error_msg.contains("EPrintJobNotStarted") {
                                         "Print job has not been started yet. Please start the print job first.".to_string()

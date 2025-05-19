@@ -2,8 +2,29 @@ use crate::app::core::App;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
+use std::path::Path;
 
 impl App {
+    // read file chunk
+    async fn read_file_chunk(path: &Path, start: usize, end: usize) -> Option<String> {
+        let mut file = match tokio::fs::File::open(path).await {
+            Ok(file) => file,
+            Err(_) => return None,
+        };
+        
+        // move file pointer to start position
+        if let Err(_) = file.seek(SeekFrom::Start(start as u64)).await {
+            return None;
+        }
+        
+        // create buffer and read content
+        let mut buffer = vec![0; end - start];
+        match file.read_exact(&mut buffer).await {
+            Ok(_) => String::from_utf8(buffer).ok(),
+            Err(_) => None,
+        }
+    }
+
     // Gcode file monitoring implementation
     pub async fn setup_gcode_monitoring(app: Arc<Mutex<App>>) {
         let app_clone_for_monitor = Arc::clone(&app);
@@ -32,30 +53,32 @@ impl App {
             
             // Read and display the incremental content of the Gcode file
             loop {
-                match tokio::fs::metadata(&gcode_path).await {
-                    Ok(metadata) => {
-                        let current_size = metadata.len() as usize;
-                        if current_size > last_size {
-                            // Open the file and read the incremental part
-                            if let Ok(file) = tokio::fs::File::open(&gcode_path).await {
-                                let mut reader = tokio::io::BufReader::new(file);
-                                reader.seek(SeekFrom::Start(last_size as u64)).await.ok();
-                                
-                                let mut buffer = String::new();
-                                if reader.read_to_string(&mut buffer).await.is_ok() && !buffer.is_empty() {
-                                    // Output the Gcode commands line by line to the log
-                                    let mut app_lock = app_clone_for_monitor.lock().await;
-                                    for line in buffer.lines() {
-                                        if line.starts_with('G') || line.starts_with('M') {
-                                            app_lock.print_output.push(format!("[GCODE] {}", line));
-                                        }
-                                    }
-                                }
-                            }
-                            last_size = current_size;
+                // try to get file metadata, if error, break loop
+                let metadata = match tokio::fs::metadata(&gcode_path).await {
+                    Ok(metadata) => metadata,
+                    Err(_) => break,
+                };
+                
+                let current_size = metadata.len() as usize;
+                
+                // if file size is not changed, skip this iteration
+                if current_size <= last_size {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    continue;
+                }
+                
+                // read new content
+                if let Some(new_content) = Self::read_file_chunk(&gcode_path, last_size, current_size).await {
+                    // update recorded file size
+                    last_size = current_size;
+                    
+                    // process and record G-code commands
+                    let mut app_lock = app_clone_for_monitor.lock().await;
+                    for line in new_content.lines() {
+                        if line.starts_with('G') || line.starts_with('M') {
+                            app_lock.print_output.push(format!("[GCODE] {}", line));
                         }
                     }
-                    Err(_) => break,
                 }
                 
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
