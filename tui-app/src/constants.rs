@@ -12,6 +12,8 @@ pub const AGGREGATOR_URL: &str = "https://walrus-agg-test.bucketprotocol.io";
 
 // Global constants
 pub const GAS_BUDGET: u64 = 100_000_000;
+
+#[allow(dead_code)]
 pub const SUI_CLOCK_OBJECT_ID: &str = "0x6";
 
 

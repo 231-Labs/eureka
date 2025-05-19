@@ -138,7 +138,13 @@ impl App {
             script_status: ScriptStatus::Idle,
             print_status: PrintStatus::Idle,
             success_message: None,
-            print_output: Vec::new(),  // initialize output list
+            // FIXME: remove this
+            print_output: vec![
+                "[STDOUT] initalizing...".to_string(),
+                "[STDOUT] checking connection...".to_string(),
+                "[STDERR] warning: temperature too high".to_string(),
+                "[STDOUT] calibration completed".to_string(),
+            ],  // initialize output list with test data
         };
         
         // Check if printer registration is needed

@@ -77,7 +77,7 @@ impl App {
             // if no printer, directly update UI state
             self.is_online = !original_state;
             
-            // 如果切換到 online 模式，立即獲取打印任務
+            // if online, update print tasks
             if self.is_online {
                 if let Err(e) = self.update_print_tasks().await {
                     self.set_message(MessageType::Error, format!("Failed to get print tasks: {}", e));
@@ -193,12 +193,6 @@ impl App {
                 return Err(error_msg);
             }
         };
-        
-        // 添加調試輸出
-        {
-            let mut app_locked = app_clone.lock().await;
-            app_locked.print_output.push(format!("[DEBUG] Current directory: {}", current_dir.display()));
-        }
         
         // Check if Gcode-Transmit directory exists before executing script
         let transmit_dir = current_dir.join("Gcode-Transmit");

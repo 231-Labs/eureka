@@ -40,7 +40,10 @@ use sui_types::{
     },
 };
 use crate::{
-    constants::GAS_BUDGET,
+    constants::{
+        GAS_BUDGET,
+        SUI_CLOCK_OBJECT_ID,
+    },
     utils::NetworkState,
 };
 
@@ -342,6 +345,46 @@ impl TransactionBuilder {
         self.execute_eureka_call(
             "update_printer_status",
             vec![cap_arg, printer_arg],
+        ).await
+    }
+
+    /// create clock object argument
+    async fn create_clock_arg(&self) -> Result<CallArg> {
+        let clock_id = ObjectID::from_hex_literal(SUI_CLOCK_OBJECT_ID)?;
+        self.create_shared_object_arg(clock_id, false).await
+    }
+
+    pub async fn start_print_job(
+        &self,
+        printer_cap_id: ObjectID,
+        printer_id: ObjectID,
+        sculpt_id: ObjectID,
+    ) -> Result<String> {
+        let cap_arg = self.create_printer_cap_arg(printer_cap_id).await?;
+        let printer_arg = self.create_shared_object_arg(printer_id, true).await?;
+        let sculpt_arg = self.create_shared_object_arg(sculpt_id, false).await?;
+        let clock_arg = self.create_clock_arg().await?;
+        
+        self.execute_eureka_call(
+            "start_print_job",
+            vec![cap_arg, printer_arg, sculpt_arg, clock_arg],
+        ).await
+    }
+
+    pub async fn complete_print_job(
+        &self,
+        printer_cap_id: ObjectID,
+        printer_id: ObjectID,
+        sculpt_id: ObjectID,
+    ) -> Result<String> {
+        let cap_arg = self.create_printer_cap_arg(printer_cap_id).await?;
+        let printer_arg = self.create_shared_object_arg(printer_id, true).await?;
+        let sculpt_arg = self.create_shared_object_arg(sculpt_id, true).await?;
+        let clock_arg = self.create_clock_arg().await?;
+        
+        self.execute_eureka_call(
+            "complete_print_job",
+            vec![cap_arg, printer_arg, sculpt_arg, clock_arg],
         ).await
     }
     

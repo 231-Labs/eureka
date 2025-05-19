@@ -138,7 +138,7 @@ pub fn draw_main(f: &mut Frame, app: &mut App) {
         .constraints([
             Constraint::Length(3),   // Message display area reduced to 3 lines
             Constraint::Length(21),  // Main print job status increased to 21 lines
-            Constraint::Min(0),      // Bottom area
+            Constraint::Min(0),      // Bottom area - Print output log
         ])
         .split(content_layout[1]);
 
@@ -151,6 +151,9 @@ pub fn draw_main(f: &mut Frame, app: &mut App) {
     } else {
         render_offline_printer(f, app, right_chunks[1], time);
     }
+
+    // Print output log area
+    render_print_output(f, app, right_chunks[2], primary_color, secondary_color);
 
     // Bottom area
     let bottom_block = Block::default()
@@ -503,4 +506,39 @@ fn render_ambient_noise(f: &mut Frame, time: u64, dim_color: Color) {
             f.render_widget(noise, Rect::new(x as u16, y as u16, 1, 1));
         }
     }
+}
+
+/// Renders the print output log
+fn render_print_output(f: &mut Frame, app: &App, area: Rect, primary_color: Color, secondary_color: Color) {
+    let output_block = Block::default()
+        .title(" PRINT OUTPUT LOG ")
+        .title_alignment(Alignment::Center)
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(primary_color));
+
+    // Convert print output to list items with appropriate styling
+    let items: Vec<ListItem> = app.print_output
+        .iter()
+        .map(|line| {
+            let (style, prefix) = if line.contains("[STDERR]") {
+                (Style::default().fg(Color::Red), "")
+            } else if line.contains("[STDOUT]") {
+                (Style::default().fg(secondary_color), "")
+            } else {
+                (Style::default().fg(Color::DarkGray), "│ ")
+            };
+
+            ListItem::new(Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled(line, style),
+            ]))
+        })
+        .collect();
+
+    let output_list = List::new(items)
+        .block(output_block)
+        .style(Style::default());
+
+    f.render_widget(output_list, area);
 } 
