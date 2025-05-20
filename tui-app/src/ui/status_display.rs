@@ -26,7 +26,7 @@ pub fn render_online_active_task(f: &mut Frame, app: &mut App, area: Rect, time:
         .title_alignment(Alignment::Center)
         .border_style(Style::default().fg(Color::Cyan));
     
-    if let Some(task) = app.tasks.iter().find(|task| matches!(task.status, TaskStatus::Printing)) {
+    if let Some(task) = app.tasks.iter().find(|task| matches!(task.status, TaskStatus::Active)) {
         // Online mode - with delegated task display
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)

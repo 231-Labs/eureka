@@ -45,7 +45,7 @@ pub fn extract_print_task(fields: &BTreeMap<String, SuiMoveValue>) -> Result<Pri
         paid_amount,
         start_time,
         end_time,
-        status: if is_completed { TaskStatus::Completed } else { TaskStatus::Printing },
+        status: if is_completed { TaskStatus::Completed } else { TaskStatus::Active },
     })
 }
 

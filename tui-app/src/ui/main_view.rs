@@ -511,9 +511,23 @@ fn render_print_output(f: &mut Frame, app: &App, area: Rect, primary_color: Colo
         })
         .collect();
 
+    // render print output log
     let output_list = List::new(items)
         .block(output_block)
         .style(Style::default());
 
-    f.render_widget(output_list, area);
+    // render the list to a scroll state, set to auto scroll to bottom
+    if !app.print_output.is_empty() {
+        // use a temporary StatefulWidget to implement auto scroll to bottom
+        let mut state = ratatui::widgets::ListState::default();
+        state.select(Some(app.print_output.len().saturating_sub(1)));
+        
+        // set the scroll position to the bottom
+        state.select(Some(app.print_output.len().saturating_sub(1)));
+        
+        f.render_stateful_widget(output_list, area, &mut state);
+    } else {
+        // if there is no output, render an empty list
+        f.render_widget(output_list, area);
+    }
 } 

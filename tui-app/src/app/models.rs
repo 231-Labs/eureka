@@ -85,6 +85,34 @@ impl App {
 
                     // run print script (not only download)
                     if !download_only {
+                        // create print job on blockchain
+                        {
+                            let mut app = app_clone.lock().await;
+                            
+                            // only create print job on blockchain if printer_id is not "No Printer ID"
+                            if app.printer_id != "No Printer ID" {
+                                app.print_output.push("[LOG] Creating print job on blockchain...".to_string());
+                                
+                                match app.test_create_print_job().await {
+                                    Ok(_) => {
+                                        app.print_output.push("[LOG] Print job created on blockchain successfully".to_string());
+                                        app
+                                        .set_message(crate::app::MessageType::Success, "Print job created on blockchain successfully"
+                                        .to_string());
+                                    },
+                                    Err(e) => {
+                                        // if error is because print job already exists, continue printing, otherwise report error
+                                        if e.contains("A print job already exists") {
+                                            app.print_output.push("[LOG] A print job already exists, continuing with printing...".to_string());
+                                        } else {
+                                            app.print_output.push(format!("[LOG] Failed to create print job on blockchain: {}", e));
+                                            app.set_message(crate::app::MessageType::Error, format!("Failed to create print job: {}", e));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
                         {
                             let mut app = app_clone.lock().await;
                             app.print_output.push("[LOG] Preparing to run_print_script".to_string());
@@ -121,7 +149,7 @@ impl App {
             let active_task = {
                 let app_guard = app_clone.lock().await;
                 app_guard.tasks.iter()
-                    .find(|t| matches!(t.status, crate::app::print_job::TaskStatus::Printing))
+                    .find(|t| matches!(t.status, crate::app::print_job::TaskStatus::Active))
                     .cloned()
             };
 

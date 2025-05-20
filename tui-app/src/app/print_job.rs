@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Debug)]
 pub enum TaskStatus {
-    Printing,
+    Active,
     Completed,
 }
 
@@ -98,9 +98,9 @@ impl PrintTask {
     //     (elapsed_hours, elapsed_minutes)
     // }
 
-    // // check if task is printing
-    // pub fn is_printing(&self) -> bool {
-    //     matches!(self.status, TaskStatus::Printing)
+    // // check if task is active   
+    // pub fn is_active(&self) -> bool {
+    //     matches!(self.status, TaskStatus::Active)
     // }
 
     // check if task is completed

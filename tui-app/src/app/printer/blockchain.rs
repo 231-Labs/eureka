@@ -243,6 +243,19 @@ impl App {
                                     MessageType::Success,
                                     format!("Print job completed successfully on blockchain (Tx: {})", tx_id)
                                 );
+                                
+                                // clear tasks and print status
+                                self.tasks.clear();
+                                self.print_status = crate::app::PrintStatus::Idle;
+                                self.script_status = crate::app::ScriptStatus::Idle;
+                                
+                                // update print tasks after transaction success
+                                if let Err(e) = self.update_print_tasks().await {
+                                    self.set_message(MessageType::Error, format!("Failed to update print tasks: {}", e));
+                                } else {
+                                    self.set_message(MessageType::Success, "Print job completed and tasks updated successfully".to_string());
+                                }
+                                
                                 Ok(())
                             }
                             Err(e) => {

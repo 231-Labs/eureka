@@ -11,7 +11,7 @@ use ratatui::{
 use std::{io, time::Duration};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use app::MessageType;
+use app::{MessageType, TaskStatus};
 
 mod app;
 mod constants;
@@ -124,7 +124,17 @@ async fn run_app<B: ratatui::backend::Backend>(
                 } else {
                     // Handle all keys on main page
                     match key.code {
-                        KeyCode::Char('q') => return Ok(()),
+                        KeyCode::Char('q') => {
+                            // Check if app is in online mode before exiting
+                            if app_guard.is_online {
+                                app_guard
+                                .set_message
+                                (MessageType::Error, "Please switch to OFFLINE mode before exiting the application."
+                                .to_string());
+                            } else {
+                                return Ok(());
+                            }
+                        },
                         KeyCode::Esc => return Ok(()),
                         // Confirmation related keys
                         KeyCode::Char('y') => {
@@ -148,7 +158,12 @@ async fn run_app<B: ratatui::backend::Backend>(
                         // Feature keys
                         KeyCode::Char('o') => {
                             if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
-                                app_guard.start_toggle_confirm();
+                                // check if there is a printing task in online mode
+                                if app_guard.is_online && app_guard.tasks.iter().any(|task| matches!(task.status, TaskStatus::Active)) {
+                                    app_guard.set_message(MessageType::Error, "Cannot switch mode while a print job is in progress. Please complete the current job first.".to_string());
+                                } else {
+                                    app_guard.start_toggle_confirm();
+                                }
                             }
                         }
                         KeyCode::Char('h') => {
