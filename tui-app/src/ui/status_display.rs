@@ -112,6 +112,11 @@ pub fn render_online_active_task(f: &mut Frame, app: &mut App, area: Rect, time:
     } else {
         // Online mode - no delegated task
         let mut idle_text = vec![
+            // Add some empty lines to center content better
+            Line::from("").alignment(Alignment::Center),
+            Line::from("").alignment(Alignment::Center),
+            Line::from("").alignment(Alignment::Center),
+            Line::from("").alignment(Alignment::Center),
             Line::from(vec![
                 Span::styled("◢ ", Style::default().fg(highlight_color)),
                 Span::styled("ONLINE MODE - AWAITING TASKS", Style::default().fg(secondary_color)),
@@ -128,9 +133,7 @@ pub fn render_online_active_task(f: &mut Frame, app: &mut App, area: Rect, time:
             Line::from("").alignment(Alignment::Center),
             Line::from("").alignment(Alignment::Center),
             Line::from(vec![
-                Span::styled("Press ", Style::default().fg(dim_color)),
-                Span::styled("P", Style::default().fg(highlight_color)),
-                Span::styled(" to print active job", Style::default().fg(dim_color)),
+                Span::styled("◈ Waiting for tasks ⦿", Style::default().fg(dim_color)),
             ]).alignment(Alignment::Center),
         ]);
         
@@ -162,6 +165,7 @@ pub fn render_offline_printer(f: &mut Frame, app: &mut App, area: Rect, time: u6
         // Offline mode - idle state
         let mut idle_text = vec![
             // Add some empty lines to center content better
+            Line::from("").alignment(Alignment::Center),
             Line::from("").alignment(Alignment::Center),
             Line::from("").alignment(Alignment::Center),
             Line::from("").alignment(Alignment::Center),
