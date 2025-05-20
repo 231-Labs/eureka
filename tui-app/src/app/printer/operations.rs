@@ -17,9 +17,7 @@ impl App {
         }
         
         // Use channel to wait for script completion
-        // FIXME: for test only
-        #[allow(unused_mut)]
-        let (_tx, mut _rx) = tokio::sync::mpsc::channel::<Result<bool, String>>(1);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<bool, String>>(1);
         let app_clone = Arc::clone(&app);
         
         // Get current directory
@@ -74,16 +72,7 @@ impl App {
         // start Gcode monitoring
         App::setup_gcode_monitoring(Arc::clone(&app_clone)).await;
         
-        // TODO: text only 使用模擬腳本替代實際打印腳本
-        // 成功模擬，執行時間為10秒鐘，產生日誌輸出
-        return super::run_mock_print_script(
-            app_clone, 
-            super::MockPrintScriptResult::Success,
-            10, // 執行10秒
-            true // 產生日誌
-        ).await;
-        
-        /* 註釋掉實際執行腳本的代碼，等有真實打印機時再恢復
+        // 執行實際列印腳本
         tokio::spawn(async move {
             let current_dir = std::env::current_dir().unwrap_or_default();
             let script_path = current_dir.join("Gcode-Transmit").join("Gcode-Process.sh");
@@ -207,7 +196,7 @@ impl App {
             Some(result) => result,
             None => Err("Communication channel with print script was closed unexpectedly".to_string())
         }
-        */
+        
     }
 
     // stop print script
