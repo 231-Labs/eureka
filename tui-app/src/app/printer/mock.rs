@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 use std::time::Duration;
 use tokio::time::sleep;
 use std::sync::Arc;
@@ -6,6 +7,7 @@ use crate::app::core::App;
 use crate::app::{MessageType, ScriptStatus, PrintStatus};
 
 /// 模擬打印腳本執行的結果類型
+#[allow(dead_code)]
 pub enum MockPrintScriptResult {
     /// 成功完成打印
     Success,
@@ -20,6 +22,7 @@ pub enum MockPrintScriptResult {
 }
 
 /// 模擬打印腳本執行，可配置不同的結果和執行時間
+#[allow(unused_mut, dead_code)]
 pub async fn run_mock_print_script(
     app: Arc<Mutex<App>>, 
     result: MockPrintScriptResult, 

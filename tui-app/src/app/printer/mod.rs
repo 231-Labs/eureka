@@ -5,5 +5,5 @@ mod blockchain;
 mod monitoring;
 mod mock;
 
-// Re-export mock module for easier access
-pub use mock::{run_mock_print_script, MockPrintScriptResult};
+// FIXME: Mock Funcitons, Re-export mock module for easier access
+// pub use mock::{run_mock_print_script, MockPrintScriptResult};
