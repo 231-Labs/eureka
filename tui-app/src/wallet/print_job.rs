@@ -74,16 +74,18 @@ impl Wallet {
             )
             .await?;
 
-        if let Some(data) = response.data {
-            if let Some(content) = data.content {
-                if let SuiParsedData::MoveObject(move_obj) = content {
-                    if let SuiMoveStruct::WithFields(fields) = &move_obj.fields {
-                        let task = extract_print_task(fields)?;
-                        return Ok(Some(task));
-                    }
-                }
-            }
-        }
-        Ok(None)
+            response.data
+            .and_then(|data| data.content)
+            .and_then(|content| match content {
+                SuiParsedData::MoveObject(move_obj) => Some(move_obj),
+                _ => None,
+            })
+            .and_then(|move_obj| match &move_obj.fields {
+                SuiMoveStruct::WithFields(fields) => Some(fields.clone()),
+                _ => None,
+            })
+            .map(|fields| extract_print_task(&fields))
+            .transpose()
+            .map_err(|e| anyhow!("Failed to extract print task: {}", e))
     }
 } 
