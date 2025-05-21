@@ -5,10 +5,16 @@ pub const SCULPT_DEVNET_PACKAGE_ID: &str = "0x2571c1e364b5647e1ee17b43f9f289e5c6
 
 /// Testnet
 pub const WALRUS_COIN_TYPE: &str = "0x356a26eb9e012a68958082340d4c4116e7f55615cf27affcff209cf0ae544f59::wal::WAL";
-pub const EUREKA_TESTNET_PACKAGE_ID: &str = "0x3bb9c121b2e6cc59c35bacecd692fe1a4ca59f5b540ae6cf7242d0c473f94974";
-pub const EUREKA_TESTNET_PRINTER_REGISTRY_ID: &str = "0x793d181af3bc04bcc85b7b0ce84fc3dbbb437ce7f541796774468e1da905b715";
-pub const SCULPT_TESTNET_PACKAGE_ID: &str = "0x3bb9c121b2e6cc59c35bacecd692fe1a4ca59f5b540ae6cf7242d0c473f94974";
+pub const EUREKA_TESTNET_PACKAGE_ID: &str = "0xae7f452d2cfe4ecb13be83d67cf706d4219aca0becf26fb3fb9d999e489d0ec4";
+pub const EUREKA_TESTNET_PRINTER_REGISTRY_ID: &str = "0xe2a996f1ea846d58304d2e7f3e17c2c744db7482fbcb7635be202a20c916f36c";
+pub const SCULPT_TESTNET_PACKAGE_ID: &str = "0xae7f452d2cfe4ecb13be83d67cf706d4219aca0becf26fb3fb9d999e489d0ec4";
 pub const AGGREGATOR_URL: &str = "https://walrus-agg-test.bucketprotocol.io";
+
+// Global constants
+pub const GAS_BUDGET: u64 = 100_000_000;
+
+#[allow(dead_code)]
+pub const SUI_CLOCK_OBJECT_ID: &str = "0x6";
 
 pub struct NetworkPackageIds {
     pub eureka_package_id: &'static str,
@@ -28,7 +34,7 @@ pub const NETWORK_PACKAGE_IDS: [NetworkPackageIds; 3] = [
         bottega_package_id: SCULPT_TESTNET_PACKAGE_ID,
     },
     NetworkPackageIds {
-        eureka_package_id: "",  // 主網的 ID 待添加
+        eureka_package_id: "",  // TODO: Add mainnet ID
         eureka_printer_registry_id: "",
         bottega_package_id: "",
     },
@@ -39,44 +45,3 @@ pub const NETWORKS: [(&str, &str); 3] = [
     ("testnet", "https://fullnode.testnet.sui.io:443"),
     ("mainnet", "https://fullnode.mainnet.sui.io:443"),
 ];
-
-// ASCII藝術字EUREKA常量
-pub const _EUREKA_ASCII_ART: &str = r#"
-███████╗██╗   ██╗██████╗ ███████╗██╗  ██╗ █████╗ ██╗
-██╔════╝██║   ██║██╔══██╗██╔════╝██║ ██╔╝██╔══██╗██║
-█████╗  ██║   ██║██████╔╝█████╗  █████╔╝ ███████║██║
-██╔══╝  ██║   ██║██╔══██╗██╔══╝  ██╔═██╗ ██╔══██║╚═╝
-███████╗╚██████╔╝██║  ██║███████╗██║  ██╗██║  ██║██╗
-╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝
-"#;
-
-// EUREKA動畫框架
-pub const EUREKA_FRAMES: [&str; 3] = [
-    r#"
-███████╗██╗   ██╗██████╗ ███████╗██╗  ██╗ █████╗ 
-██╔════╝██║   ██║██╔══██╗██╔════╝██║ ██╔╝██╔══██╗
-█████╗  ██║   ██║██████╔╝█████╗  █████╔╝ ███████║
-██╔══╝  ██║   ██║██╔══██╗██╔══╝  ██╔═██╗ ██╔══██║
-███████╗╚██████╔╝██║  ██║███████╗██║  ██╗██║  ██║
-╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
-"#,
-    r#"
-███████╗██╗   ██╗██████╗ ███████╗██╗  ██╗ █████╗ ▄▄
-██╔════╝██║   ██║██╔══██╗██╔════╝██║ ██╔╝██╔══██╗  
-█████╗  ██║   ██║██████╔╝█████╗  █████╔╝ ███████║  
-██╔══╝  ██║   ██║██╔══██╗██╔══╝  ██╔═██╗ ██╔══██║  
-███████╗╚██████╔╝██║  ██║███████╗██║  ██╗██║  ██║▀▀
-╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
-"#,
-    r#"
-███████╗██╗   ██╗██████╗ ███████╗██╗  ██╗ █████╗ ▀▀
-██╔════╝██║   ██║██╔══██╗██╔════╝██║ ██╔╝██╔══██╗  
-█████╗  ██║   ██║██████╔╝█████╗  █████╔╝ ███████║  
-██╔══╝  ██║   ██║██╔══██╗██╔══╝  ██╔═██╗ ██╔══██║  
-███████╗╚██████╔╝██║  ██║███████╗██║  ██╗██║  ██║▄▄
-╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
-"#,
-];
-
-// 添加構建在Sui上的標語
-pub const BUILD_ON_SUI: &str = "Build on Sui";

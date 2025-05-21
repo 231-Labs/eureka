@@ -1,10 +1,13 @@
 #!/bin/bash
-cd "$(dirname "$0")"
-PID_File_Path="~/eureka/tui-app/Gcode-Transmit/main/Gcode-Send-PID.pid"
-# PID_File_Path="./Gcode-Send-PID.pid"
+# Get the directory of the script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Use relative path to get PID file
+PID_File_Path="$SCRIPT_DIR/Gcode-Send-PID.pid"
 USB_Device="/dev/3Dprinter"
 
-# 檢查 Printer 是否連接
+# Check if Printer is connected
 if [ ! -e "$USB_Device" ]; then
   echo "Printer not connected!"
   exit 1
