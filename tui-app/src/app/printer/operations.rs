@@ -206,17 +206,20 @@ impl App {
         
         // get current execution directory
         let current_dir = std::env::current_dir()?;
-        let script_dir = current_dir.join("Gcode-Transmit");
+        let script_path = current_dir.join("Gcode-Transmit").join("Gcode-Process.sh");
+        let script_path_str = script_path.to_string_lossy();
         
         // output path log for debugging
         self.print_output.push(format!("[DEBUG] Current directory: {}", current_dir.display()));
-        self.print_output.push(format!("[DEBUG] Script directory: {}", script_dir.display()));
+        self.print_output.push(format!("[DEBUG] Script path: {}", script_path.display()));
+        
+        // 使用與run_print_script相同的方式執行腳本
+        let command = format!("{} --stop", script_path_str);
         
         // use spawn to start command, capture output to display
         let output = match tokio::process::Command::new("sh")
-            .current_dir(&script_dir)
-            .arg("Gcode-Process.sh")
-            .arg("--stop")
+            .arg("-c")
+            .arg(&command)
             .output()
             .await {
                 Ok(output) => output,
