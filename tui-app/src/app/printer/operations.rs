@@ -210,10 +210,9 @@ impl App {
         let script_path_str = script_path.to_string_lossy();
         
         // output path log for debugging
-        self.print_output.push(format!("[DEBUG] Current directory: {}", current_dir.display()));
-        self.print_output.push(format!("[DEBUG] Script path: {}", script_path.display()));
+        // self.print_output.push(format!("[DEBUG] Current directory: {}", current_dir.display()));
+        // self.print_output.push(format!("[DEBUG] Script path: {}", script_path.display()));
         
-        // 使用與run_print_script相同的方式執行腳本
         let command = format!("{} --stop", script_path_str);
         
         // use spawn to start command, capture output to display
