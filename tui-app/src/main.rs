@@ -11,6 +11,7 @@ use ratatui::{
 use std::{io, time::Duration};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio::time;
 use app::{MessageType, TaskStatus};
 
 mod app;
@@ -61,10 +62,13 @@ async fn run_app<B: ratatui::backend::Backend>(
 ) -> Result<()> {
     // Retry interval
     let mut last_update_time = std::time::Instant::now();
-    let retry_interval = std::time::Duration::from_secs(5); // Retry getting printer ID every 3 second
+    let retry_interval = std::time::Duration::from_secs(5); // Retry getting printer ID every 5 seconds
     
     // Track if printer ID is acquired
     let mut printer_id_acquired = false;
+    
+    // 啟動定時檢查 print_job 的任務
+    start_print_job_polling(Arc::clone(&app));
     
     loop {
         let app_arc = Arc::clone(&app);
@@ -242,5 +246,31 @@ async fn run_app<B: ratatui::backend::Backend>(
             }
         }
     }
+}
+
+// start polling print job
+fn start_print_job_polling(app: Arc<Mutex<App>>) {
+    tokio::spawn(async move {
+        let poll_interval = time::Duration::from_secs(10); // check every 10 seconds
+        let mut interval = time::interval(poll_interval);
+        
+        loop {
+            interval.tick().await;
+            let mut app_guard = app.lock().await;
+            
+            // only check update in online mode when there's no active task
+            if app_guard.is_online && app_guard.printer_id != "No Printer ID" {
+                let has_active_task = app_guard.tasks
+                .iter()
+                .any(|task| !task
+                .is_completed());
+                if !has_active_task {
+                    if let Err(e) = app_guard.update_print_tasks().await {
+                        println!("Failed to update print tasks: {:?}", e);
+                    }
+                }
+            }
+        }
+    });
 }
 

@@ -87,5 +87,6 @@ impl Wallet {
             .map(|fields| extract_print_task(&fields))
             .transpose()
             .map_err(|e| anyhow!("Failed to extract print task: {}", e))
+            
     }
 } 
