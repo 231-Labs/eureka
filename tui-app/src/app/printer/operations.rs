@@ -206,15 +206,13 @@ impl App {
         
         // get current execution directory
         let current_dir = std::env::current_dir()?;
-        let script_dir = current_dir.join("Gcode-Transmit");
-        let script_path = script_dir.join("Gcode-Process.sh");
+        let script_path = current_dir.join("Gcode-Transmit").join("Gcode-Process.sh");
         
-        // 添加更詳細的調試信息
+        // print debug information
         self.print_output.push(format!("[DEBUG] Current directory: {}", current_dir.display()));
-        self.print_output.push(format!("[DEBUG] Script directory: {}", script_dir.display()));
-        self.print_output.push(format!("[DEBUG] Full script path: {}", script_path.display()));
+        self.print_output.push(format!("[DEBUG] Script path: {}", script_path.display()));
         
-        // 檢查腳本是否存在
+        // check if script exists
         if !script_path.exists() {
             let error_msg = format!("Script file does not exist: {}", script_path.display());
             self.print_output.push(format!("[ERROR] {}", error_msg));
@@ -223,12 +221,16 @@ impl App {
             return Ok(());
         }
         
-        // 使用與原始代碼相同的方式執行 - 先切換到腳本目錄，然後執行腳本
-        self.print_output.push("[DEBUG] Attempting to execute stop script".to_string());
+        // use simple and direct way to execute script - not change directory, use absolute path
+        self.print_output.push("[DEBUG] Executing: Gcode-Process.sh --stop".to_string());
+        
+        // execute script
+        let script_path_str = script_path.to_string_lossy();
+        let command = format!("{} --stop", script_path_str);
+        
         let output = match tokio::process::Command::new("sh")
-            .current_dir(&script_dir)
-            .arg("./Gcode-Process.sh")
-            .arg("--stop")
+            .arg("-c")
+            .arg(&command)
             .output()
             .await {
                 Ok(output) => output,
@@ -249,6 +251,12 @@ impl App {
             // reset state
             self.script_status = ScriptStatus::Idle;
             self.print_status = PrintStatus::Idle;
+            
+            // 記錄輸出以便調試
+            if !stdout.is_empty() {
+                self.print_output.push(format!("[STDOUT] {}", stdout));
+            }
+            
             self.set_message(MessageType::Success, 
                 if stdout.is_empty() { "Print stopped successfully".to_string() } else { stdout }
             );
@@ -256,13 +264,23 @@ impl App {
             // process error
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            
+            // 記錄所有輸出以便調試
+            if !stdout.is_empty() {
+                self.print_output.push(format!("[STDOUT] {}", stdout));
+            }
+            if !stderr.is_empty() {
+                self.print_output.push(format!("[STDERR] {}", stderr));
+            }
+            
             let error_msg = if !stderr.is_empty() {
                 stderr
             } else if !stdout.is_empty() {
                 stdout
             } else {
-                "Failed to stop print".to_string()
+                format!("Failed to stop print (exit code: {})", output.status.code().unwrap_or(-1))
             };
+            
             self.script_status = ScriptStatus::Failed(error_msg.clone());
             self.print_status = PrintStatus::Error(error_msg.clone());
             self.set_message(MessageType::Error, error_msg);
