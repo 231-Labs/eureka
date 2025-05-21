@@ -206,26 +206,38 @@ impl App {
         
         // get current execution directory
         let current_dir = std::env::current_dir()?;
-        let script_path = current_dir.join("Gcode-Transmit").join("Gcode-Process.sh");
-        let script_path_str = script_path.to_string_lossy();
+        let script_dir = current_dir.join("Gcode-Transmit");
+        let script_path = script_dir.join("Gcode-Process.sh");
         
-        // output path log for debugging
-        // self.print_output.push(format!("[DEBUG] Current directory: {}", current_dir.display()));
-        // self.print_output.push(format!("[DEBUG] Script path: {}", script_path.display()));
+        // 添加更詳細的調試信息
+        self.print_output.push(format!("[DEBUG] Current directory: {}", current_dir.display()));
+        self.print_output.push(format!("[DEBUG] Script directory: {}", script_dir.display()));
+        self.print_output.push(format!("[DEBUG] Full script path: {}", script_path.display()));
         
-        let command = format!("{} --stop", script_path_str);
+        // 檢查腳本是否存在
+        if !script_path.exists() {
+            let error_msg = format!("Script file does not exist: {}", script_path.display());
+            self.print_output.push(format!("[ERROR] {}", error_msg));
+            self.script_status = ScriptStatus::Failed(error_msg.clone());
+            self.set_message(MessageType::Error, error_msg);
+            return Ok(());
+        }
         
-        // use spawn to start command, capture output to display
+        // 使用與原始代碼相同的方式執行 - 先切換到腳本目錄，然後執行腳本
+        self.print_output.push("[DEBUG] Attempting to execute stop script".to_string());
         let output = match tokio::process::Command::new("sh")
-            .arg("-c")
-            .arg(&command)
+            .current_dir(&script_dir)
+            .arg("./Gcode-Process.sh")
+            .arg("--stop")
             .output()
             .await {
                 Ok(output) => output,
                 Err(e) => {
-                    self.script_status = ScriptStatus::Failed(e.to_string());
+                    let error_msg = format!("Failed to execute stop script: {}", e);
+                    self.print_output.push(format!("[ERROR] {}", error_msg));
+                    self.script_status = ScriptStatus::Failed(error_msg.clone());
                     self.print_status = PrintStatus::Error("Failed to execute stop script".to_string());
-                    self.set_message(MessageType::Error, format!("Failed to execute stop script: {}", e));
+                    self.set_message(MessageType::Error, error_msg);
                     return Ok(());
                 }
             };

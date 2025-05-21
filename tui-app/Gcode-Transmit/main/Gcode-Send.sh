@@ -1,9 +1,9 @@
 #!/bin/bash
-# 獲取腳本所在的目錄
+# Get the directory of the script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# 獲取父目錄路徑
+# Get the parent directory path
 PARENT_DIR="$(dirname "$SCRIPT_DIR")"
 
 prusa-slicer --export-gcode --load Ender-3_set.ini --output test.gcode "$PARENT_DIR/test.stl" &

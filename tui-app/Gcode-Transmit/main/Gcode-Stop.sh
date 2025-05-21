@@ -1,13 +1,13 @@
 #!/bin/bash
-# 獲取腳本所在的目錄
+# Get the directory of the script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# 使用相對路徑獲取PID文件
+# Use relative path to get PID file
 PID_File_Path="$SCRIPT_DIR/Gcode-Send-PID.pid"
 USB_Device="/dev/3Dprinter"
 
-# 檢查 Printer 是否連接
+# Check if Printer is connected
 if [ ! -e "$USB_Device" ]; then
   echo "Printer not connected!"
   exit 1

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 Options_control="$1"
-# 獲取腳本所在的目錄
+# Get the directory of the script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ "$Options_control" == "--print" ]; then
@@ -12,14 +12,14 @@ if [ "$Options_control" == "--print" ]; then
     exit 1
   fi
 
-  # 使用相對路徑執行子腳本
+  # Use relative path to execute sub-script
   "$SCRIPT_DIR/main/Gcode-Send.sh" &
   wait $!
   echo $? > "$SCRIPT_DIR/Gcode-Send-Status"
 
 elif [ "$Options_control" == "--stop" ]; then
 
-  # 使用相對路徑執行停止腳本
+  # Use relative path to execute stop script
   "$SCRIPT_DIR/main/Gcode-Stop.sh"
   wait $!
   echo $? > "$SCRIPT_DIR/Gcode-Stop-Status"
