@@ -152,7 +152,7 @@ impl App {
         app.sculpt_state.select(Some(0));
         app.tasks_state.select(Some(0));
         
-        // 初始化時嘗試獲取打印任務
+        // try to get print tasks
         if app.printer_id != "No Printer ID" {
             if let Err(e) = app.update_print_tasks().await {
                 println!("Failed to load initial print tasks: {:?}", e);
@@ -246,7 +246,6 @@ impl App {
                         // New task defaults to idle state
                         self.print_status = PrintStatus::Idle;
                         self.script_status = ScriptStatus::Idle;
-                        // 顯示通知訊息
                         self.set_message(MessageType::Success, format!("Found print task: {}", task.name));
                     } else {
                         // If task already exists, update its status
@@ -266,7 +265,7 @@ impl App {
                 }
                 Err(e) => {
                     println!("Error getting print task: {:?}", e);
-                    self.set_message(MessageType::Error, format!("獲取打印任務失敗: {}", e));
+                    self.set_message(MessageType::Error, format!("Failed to get print task: {}", e));
                 }
             }
         }
