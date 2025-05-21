@@ -2,7 +2,7 @@ use anyhow::Result;
 use crossterm::{
     event::{self as crossterm_event, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, Clear, ClearType},
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -28,6 +28,8 @@ async fn main() -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, Clear(ClearType::All))?;
+    
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -182,15 +184,6 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 }
                             }
                         }
-                        // FIXME: test only
-                        KeyCode::Char('c') => {
-                            if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network && !app_guard.is_online {
-                                // 測試創建打印任務
-                                if let Err(e) = app_guard.test_create_print_job().await {
-                                    app_guard.set_message(MessageType::Error, format!("Failed to create print job: {}", e));
-                                }
-                            }
-                        }
                         KeyCode::Char('e') => {
                             if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
                                 if let Err(e) = app_guard.run_stop_script().await {
@@ -228,22 +221,6 @@ async fn run_app<B: ratatui::backend::Backend>(
                         }
                         KeyCode::Down => {
                             app_guard.next_item();
-                        }
-                        // FIXME: test only
-                        KeyCode::Char('t') => {
-                            if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
-                                if let Err(e) = app_guard.test_start_print_job().await {
-                                    app_guard.set_message(MessageType::Error, format!("Failed to test start print job: {}", e));
-                                }
-                            }
-                        }
-                        // FIXME: test only
-                        KeyCode::Char('f') => {
-                            if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
-                                if let Err(e) = app_guard.test_complete_print_job().await {
-                                    app_guard.set_message(MessageType::Error, format!("Failed to complete print job: {}", e));
-                                }
-                            }
                         }
                         _ => {
                             // clear any messages

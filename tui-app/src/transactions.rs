@@ -214,7 +214,7 @@ impl TransactionExecutor {
         // Sign and execute
         let tx_response = self.sign_and_execute(tx_data).await?;
         
-        // 檢查交易是否成功
+        // Check if transaction is successful
         if let Some(effects) = &tx_response.effects {
             if !effects.status().is_ok() {
                 let error_detail = format!("{:?}", effects.status());
@@ -439,50 +439,6 @@ impl TransactionBuilder {
             vec![printer_arg, sculpt_arg],
         ).await
     }
-    
-    // add new transaction methods, for example:
-    /*
-    pub async fn print_sculpt(
-        &self,
-        printer_id: ObjectID,
-        sculpt_id: ObjectID,
-        payment_amount: u64,
-    ) -> Result<String> {
-        // 獲取共享對象版本
-        let printer_version = self.executor.get_shared_object(printer_id).await?;
-        let sculpt_version = self.executor.get_shared_object(sculpt_id).await?;
-        
-        // 構建參數列表
-        let args = vec![
-            // 創建共享對象參數
-            CallArg::Object(ObjectArg::SharedObject {
-                id: printer_id,
-                initial_shared_version: printer_version.into(),
-                mutable: true,
-            }),
-            CallArg::Object(ObjectArg::SharedObject {
-                id: sculpt_id,
-                initial_shared_version: sculpt_version.into(),
-                mutable: false,
-            }),
-            // 創建支付金額參數
-            CallArg::Pure(bcs::to_bytes(&payment_amount)?),
-        ];
-        
-        // 獲取包 ID
-        let package_id = ObjectID::from_hex_literal(&self.network_state.get_current_package_ids().eureka_package_id)?;
-        
-        // 執行 Move 調用
-        self.executor.execute_move_call(
-            package_id,
-            "eureka",
-            "print_sculpt",
-            vec![],
-            args,
-            None,
-        ).await
-    }
-    */
 }
     
     

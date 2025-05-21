@@ -5,7 +5,7 @@ use anyhow::Result;
 use sui_sdk::SuiClient;
 use std::sync::Arc;
 use std::vec::Vec;
-use super::print_job::{PrintTask};
+use super::print_job::PrintTask;
 
 #[derive(Clone, PartialEq)]
 pub enum RegistrationStatus {
@@ -65,7 +65,7 @@ pub struct App {
     pub script_status: ScriptStatus,
     pub print_status: PrintStatus,
     pub success_message: Option<String>,
-    pub print_output: Vec<String>,  // 存儲列印輸出
+    pub print_output: Vec<String>,  // store print output
 }
 
 impl App {

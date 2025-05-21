@@ -460,17 +460,6 @@ fn render_help_controls(f: &mut Frame, app: &App, area: Rect, dim_color: Color, 
                 Span::styled("E", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
                 Span::raw(" Stop Printing"),
                 Span::raw("   "),
-                // FIXME: test only
-                Span::styled("C", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
-                Span::raw(" Create Job"),
-                Span::raw("   "),
-                // FIXME: test only
-                Span::styled("T", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
-                Span::raw(" Test Job"),
-                Span::raw("   "),
-                // FIXME: test only
-                Span::styled("F", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
-                Span::raw(" Finish Job"),
             ]),
         ]
     };
