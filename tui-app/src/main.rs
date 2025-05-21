@@ -104,8 +104,14 @@ async fn run_app<B: ratatui::backend::Backend>(
                 if app_guard.is_registering_printer {
                     // Only handle registration related keys on registration page
                     match key.code {
-                        KeyCode::Char('q') => return Ok(()),
-                        KeyCode::Esc => return Ok(()),
+                        KeyCode::Char('q') => {
+                            terminal.clear()?;
+                            return Ok(());
+                        },
+                        KeyCode::Esc => {
+                            terminal.clear()?;
+                            return Ok(());
+                        },
                         KeyCode::Char(c) => {
                             if let Err(e) = app_guard.handle_printer_registration_input(c).await {
                                 app_guard.error_message = Some(format!("Error: {}", e));
@@ -134,10 +140,14 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 (MessageType::Error, "Please switch to OFFLINE mode before exiting the application."
                                 .to_string());
                             } else {
+                                terminal.clear()?;
                                 return Ok(());
                             }
                         },
-                        KeyCode::Esc => return Ok(()),
+                        KeyCode::Esc => {
+                            terminal.clear()?;
+                            return Ok(());
+                        },
                         // Confirmation related keys
                         KeyCode::Char('y') => {
                             if app_guard.is_confirming {
