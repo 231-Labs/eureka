@@ -1,5 +1,5 @@
 use crate::app::core::App;
-use crate::app::constants::AGGREGATOR_URL;
+use crate::constants::AGGREGATOR_URL;
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::Mutex;
