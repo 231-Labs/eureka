@@ -10,17 +10,15 @@ impl App {
     pub async fn download_3d_model(&mut self, blob_id: &str) -> Result<()> {
         let url = format!("{}/v1/blobs/{}", AGGREGATOR_URL, blob_id);
         
-        // 獲取當前執行目錄
         let current_dir = std::env::current_dir()?;
         let temp_path = current_dir.join("test.stl");
         let final_path = current_dir.join("Gcode-Transmit").join("test.stl");
         
-        // 輸出路徑日誌，以便調試
-        self.print_output.push(format!("[DEBUG] Current directory: {}", current_dir.display()));
-        self.print_output.push(format!("[DEBUG] Temp file path: {}", temp_path.display()));
-        self.print_output.push(format!("[DEBUG] Final file path: {}", final_path.display()));
+        // self.print_output.push(format!("[DEBUG] Current directory: {}", current_dir.display()));
+        // self.print_output.push(format!("[DEBUG] Temp file path: {}", temp_path.display()));
+        // self.print_output.push(format!("[DEBUG] Final file path: {}", final_path.display()));
         
-        // 確保目標目錄存在
+        // ensure target directory exists
         let gcode_dir = current_dir.join("Gcode-Transmit");
         if !Path::new(&gcode_dir).exists() {
             self.print_output.push(format!("[DEBUG] Creating directory: {}", gcode_dir.display()));
