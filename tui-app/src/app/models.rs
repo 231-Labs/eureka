@@ -10,20 +10,17 @@ impl App {
     pub async fn download_3d_model(&mut self, blob_id: &str) -> Result<()> {
         let url = format!("{}/v1/blobs/{}", AGGREGATOR_URL, blob_id);
         
-        // 獲取當前執行目錄
+        // Get current directory
         let current_dir = std::env::current_dir()?;
         let temp_path = current_dir.join("test.stl");
         let final_path = current_dir.join("Gcode-Transmit").join("test.stl");
         
-        // 輸出路徑日誌，以便調試
-        self.print_output.push(format!("[DEBUG] Current directory: {}", current_dir.display()));
-        self.print_output.push(format!("[DEBUG] Temp file path: {}", temp_path.display()));
-        self.print_output.push(format!("[DEBUG] Final file path: {}", final_path.display()));
+        self.print_output.push(format!("[LOG] Downloading model from: {}", url));
         
-        // 確保目標目錄存在
+        // Ensure target directory exists
         let gcode_dir = current_dir.join("Gcode-Transmit");
         if !Path::new(&gcode_dir).exists() {
-            self.print_output.push(format!("[DEBUG] Creating directory: {}", gcode_dir.display()));
+            self.print_output.push(format!("[LOG] Creating directory: {}", gcode_dir.display()));
             fs::create_dir_all(&gcode_dir)?;
         }
         
@@ -115,8 +112,7 @@ impl App {
                         
                         {
                             let mut app = app_clone.lock().await;
-                            app.print_output.push("[LOG] Preparing to run_print_script".to_string());
-                            // 無論打印腳本是否成功執行，都設置為打印狀態
+                            app.print_output.push("[LOG] Preparing to run print script".to_string());
                             app.print_status = crate::app::PrintStatus::Printing;
                         }
                         
@@ -125,13 +121,13 @@ impl App {
                         let mut app = app_clone.lock().await;
                         match print_result {
                             Ok(_) => {
-                                app.print_output.push("[LOG] run_print_script executed successfully".to_string());
+                                app.print_output.push("[LOG] Print script executed successfully".to_string());
                             },
                             Err(error_msg) => {
-                                app.print_output.push(format!("[LOG] run_print_script failed: {}", error_msg));
+                                app.print_output.push(format!("[LOG] Print script failed: {}", error_msg));
                                 app.set_message(crate::app::MessageType::Error, error_msg);
-                                // 即使執行失敗，仍然保持打印狀態
-                                app.print_status = crate::app::PrintStatus::Printing;
+                                // Update status to failed when there's an error
+                                app.print_status = crate::app::PrintStatus::Idle;
                             }
                         }
                     }
@@ -141,11 +137,11 @@ impl App {
         Ok(())
     }
 
-    // 處理在線模式下的打印任務
+    // Handle print tasks in online mode
     pub async fn handle_task_print(app: Arc<Mutex<App>>, download_only: bool) -> Result<()> {
         let app_clone = Arc::clone(&app);
         tokio::spawn(async move {
-            // 嘗試獲取活動打印任務
+            // Try to get active print task
             let active_task = {
                 let app_guard = app_clone.lock().await;
                 app_guard.tasks.iter()
@@ -153,7 +149,7 @@ impl App {
                     .cloned()
             };
 
-            // 處理活動任務
+            // Process active task
             if let Some(task) = active_task {
                 {
                     let mut app = app_clone.lock().await;
@@ -162,25 +158,24 @@ impl App {
                     app.set_message(crate::app::MessageType::Info, format!("Processing print job: {}", task.name));
                 }
                 
-                // 下載模型
+                // Download model
                 let download_result = {
                     let mut app = app_clone.lock().await;
                     app.download_3d_model(&task.sculpt_structure).await
                 };
 
-                // 處理下載結果
+                // Handle download result
                 if let Err(e) = download_result {
                     let mut app = app_clone.lock().await;
                     app.set_message(crate::app::MessageType::Error, format!("Failed to download task model: {}", e));
                     return;
                 }
 
-                // 執行打印腳本
+                // Run print script
                 if !download_only {
                     {
                         let mut app = app_clone.lock().await;
                         app.print_output.push("[LOG] Preparing to run print script for task".to_string());
-                        // 無論打印腳本是否成功執行，都設置為打印狀態
                         app.print_status = crate::app::PrintStatus::Printing;
                     }
                     
@@ -191,14 +186,11 @@ impl App {
                         Ok(_) => {
                             app.print_output.push("[LOG] Task print script executed successfully".to_string());
                             app.set_message(crate::app::MessageType::Success, "Print job started successfully!".to_string());
-                            // 更新區塊鏈上的任務狀態（TODO：實現此功能）
-                            // app.update_task_status_on_blockchain(&task.id).await.ok();
                         },
                         Err(error_msg) => {
                             app.print_output.push(format!("[LOG] Task print script failed: {}", error_msg));
                             app.set_message(crate::app::MessageType::Error, format!("Failed to start print job: {}", error_msg));
-                            // 即使執行失敗，仍然保持打印狀態 FIXME: Test Only
-                            app.print_status = crate::app::PrintStatus::Printing;
+                            app.print_status = crate::app::PrintStatus::Idle;
                         }
                     }
                 }

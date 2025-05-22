@@ -160,8 +160,84 @@ pub fn render_offline_printer(f: &mut Frame, app: &mut App, area: Rect, time: u6
         .title(" ACTIVE PRINT JOB ")
         .title_alignment(Alignment::Center)
         .border_style(Style::default().fg(Color::Magenta));
+    
+    // first check if there's an active task, then show the task details
+    if let Some(task) = app.tasks.iter().find(|task| matches!(task.status, TaskStatus::Active)) {
+        // offline mode - show active task details
+        let current_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let elapsed_time = task.start_time
+            .map(|start| current_time.saturating_sub(start))
+            .unwrap_or(0);
         
-    if matches!(app.print_status, PrintStatus::Idle) {
+        let _elapsed_hours = elapsed_time / 3600;
+        let _elapsed_minutes = (elapsed_time % 3600) / 60;
+
+        let mut task_info = vec![
+            Line::from("").alignment(Alignment::Center),
+            Line::from(vec![
+                Span::raw("╭─"),
+                Span::styled("MODEL", Style::default().fg(highlight_color)),
+                Span::raw("─╮"),
+            ]).alignment(Alignment::Center),
+            Line::from(vec![
+                Span::styled(&task.name, Style::default().fg(secondary_color).add_modifier(Modifier::BOLD)),
+            ]).alignment(Alignment::Center),
+            Line::from(vec![
+                Span::raw("╰"),
+                Span::styled("──────", Style::default().fg(dim_color)),
+                Span::raw("╯"),
+            ]).alignment(Alignment::Center),
+            Line::from("").alignment(Alignment::Center),
+        ];
+
+        // Add printer animation frames
+        task_info.extend(get_printer_animation_frames(app, animation_frame, Color::Magenta));
+
+        task_info.extend(vec![
+            Line::from(vec![
+                Span::styled("BLOB ID: ", Style::default().fg(dim_color)),
+                Span::styled(task.get_short_sculpt_id(), Style::default().fg(secondary_color)),
+            ]).alignment(Alignment::Center),
+            Line::from(vec![
+                Span::styled("CUSTOMER: ", Style::default().fg(dim_color)),
+                Span::styled(task.get_short_customer(), Style::default().fg(secondary_color)),
+            ]).alignment(Alignment::Center),
+            Line::from("").alignment(Alignment::Center),
+            Line::from(vec![
+                Span::styled("◈ ", Style::default().fg(highlight_color)),
+                Span::styled(
+                    task.format_paid_amount(),
+                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                ),
+                Span::styled(" ◈", Style::default().fg(highlight_color)),
+            ]).alignment(Alignment::Center),
+            Line::from(vec![
+                Span::styled("ELAPSED: ", Style::default().fg(dim_color)),
+                Span::styled(
+                    task.format_elapsed_time(),
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                ),
+            ]).alignment(Alignment::Center),
+        ]);
+
+        // Add a notice for online mode
+        task_info.push(Line::from(vec![
+            Span::styled("Switch to ", Style::default().fg(dim_color)),
+            Span::styled("ONLINE", Style::default().fg(highlight_color)),
+            Span::styled(" mode to process", Style::default().fg(dim_color)),
+        ]).alignment(Alignment::Center));
+
+        let task_widget = Paragraph::new(task_info)
+            .style(Style::default())
+            .alignment(Alignment::Center)
+            .block(task_block);
+
+        f.render_widget(task_widget, area);
+    } else if matches!(app.print_status, PrintStatus::Idle) {
         // Offline mode - idle state
         let mut idle_text = vec![
             // Add some empty lines to center content better

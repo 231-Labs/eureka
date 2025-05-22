@@ -1,99 +1,89 @@
-# Eureka - 3D 列印智能合約系統
+# 🛠️ Eureka - 3D Printing Smart Contract System
 
-## 系統概述
+> Physical Manufacturing Layer for the Archimeters Ecosystem 🔄
 
-Eureka 是一個基於 Sui 區塊鏈的 3D 列印服務智能合約系統，實現了列印機管理、任務分配和收益結算等功能。系統由智能合約和命令行應用兩部分組成。
 
-## 技術架構
+## 📋 Project Overview
 
-### 智能合約
-- 部署環境：Sui devnet
-- 合約地址：`0x1071e919f3260391059c17a7ada97c5ddb32751e1acb381cafa0742f9d5e08dd`
-- 核心模組：
-  - eureka：列印機管理
-  - print_job：任務管理
+Eureka is an experimental decentralized 3D printing manufacturing network based on the Sui blockchain. It serves as a companion system for the [Archimeters](https://github.com/231-Labs/archimeters) parametric design platform, responsible for transforming digital designs into physical products. Currently in the prototype stage, it has implemented basic printer registration, task assignment, and revenue settlement (in development) functionalities.
 
-### 命令行應用
-- 開發語言：Rust
-- 界面框架：Ratatui
-- 運行時：Tokio
-- 網絡支持：devnet/testnet/mainnet
+## 💻 Technical Implementation
 
-## 系統功能
+### Hardware Platform
+- Optimized to run on Raspberry Pi 5 + Ubuntu environment
+- Low resource consumption, suitable for long-term stable operation
+- We aim to keep Eureka's hardware requirements accessible, allowing more users to experience distributed manufacturing
 
-### 列印機管理
-- 註冊：將列印機註冊到系統
-- 狀態控制：在線/離線/忙碌
-- 收益提取：自動結算和提取
+### Smart Contracts (Move)
+- **PrinterRegistry**: Manages 3D printer registration and status
+- **PrintJob**: Handles print task creation and execution
+- **DesignIntegration**: Interface for interoperability with Archimeters design assets
 
-### 任務管理
-- 創建：新建列印任務
-- 狀態追蹤：pending/printing/completed
-- 進度監控：實時更新任務狀態
+### Terminal Application (Rust)
+- TUI interface built with Ratatui
+- Blockchain interaction via sui-sdk
 
-## 技術實現
+### Why Choose a TUI Application?
+- Hardware-friendly: Performs excellently on resource-constrained devices (like Raspberry Pi) without requiring additional graphical processing resources
+- Cost-effective: Lowers the barrier to entry, enabling more people to join the manufacturing network at a low cost
+- Remote operation: Facilitates remote monitoring and management via SSH
 
-### 智能合約
-- 使用 Move 語言開發
-- 實現共享對象管理
-- 支持代幣交易
+## 🔄 Integration with Archimeters
 
-### 命令行應用
-- 異步操作處理
-- 多網絡環境支持
-- 完整的錯誤處理
+Eureka and Archimeters form a complete design-to-manufacturing ecosystem, enabling seamless transition from digital creativity to physical products:
 
-## 部署信息
+### Design → Manufacturing Bridge 🌉
+- **On-chain Asset Access**: Direct access to design files and parameters stored in Walrus
+- **Dual Working Modes**: 
+  - Offline mode for printing 3D models from the user's wallet
+  - Online mode for receiving commissioned tasks from the Archimeters platform
 
-### 合約地址
-- Package ID: `0x1071e919f3260391059c17a7ada97c5ddb32751e1acb381cafa0742f9d5e08dd`
-- PrinterRegistry: `0xfab040dbd9166fcf125110491490b899bb864b87ced83a3a3d4dfd2ddc650663`
-- WAL Token: `0x356a26eb9e012a68958082340d4c4116e7f55615cf27affcff209cf0ae544f59::wal::WAL`
+### Intelligent Manufacturing Layer 🏭
+- **Automated Workflow**: One-click startup feature simplifies the entire process from accepting orders to completion
+- **Real-time Status Synchronization**: Print progress is recorded on-chain in real-time, ensuring transparency
+- **G-code Converter**: Automatically converts design parameters into executable instructions for the printer
 
-### 網絡配置
+### Economic Incentive System (In Development) 💸
+- **Instant Settlement**: Manufacturing revenue is automatically distributed upon task completion
+- **On-demand Manufacturing**: Transforms designs into physical products instantly, reducing resource waste
+- **Decentralized Marketplace**: Connects designers and printing resource providers globally
+
+## 🧪 Development Status
+
+The project is currently in the experimental prototype stage. Implemented features include:
+- Basic contract structure and printer registration
+- TUI application framework with blockchain interaction
+- On-chain printing task status
+
+Under development:
+- Commissioned printing task payment mechanism
+- Integration of Seal decryption functionality for complete NFT access control
+
+## 🚀 Usage
+
+### Requirements
+- Rust 1.70+
+- Sui CLI
+
+### Installation Steps
+```bash
+# Clone the repository
+git clone https://github.com/231-Labs/eureka.git
+
+# Compile the application
+cd eureka/tui-app
+cargo build
+
+# Run the application
+cargo run
+```
+
+### Configuration
+The application supports the following network configurations:
 - Devnet: `https://fullnode.devnet.sui.io:443`
 - Testnet: `https://fullnode.testnet.sui.io:443`
 - Mainnet: `https://fullnode.mainnet.sui.io:443`
 
-## 開發環境
+---
 
-### 系統需求
-- Rust 1.70+
-- Sui CLI
-- WAL 代幣
-
-### 依賴項
-- sui-sdk
-- ratatui
-- tokio
-- anyhow
-
-## 更新日誌
-
-### 2024-03-21
-- 實現 PrinterCap 權限檢查
-- 優化收益提取邏輯
-- 改進錯誤處理機制
-
-## 技術文檔
-
-### 狀態定義
-- 列印機狀態：
-  - online: 可接受任務
-  - busy: 執行中
-  - offline: 不可用
-- 任務狀態：
-  - pending: 等待執行
-  - printing: 執行中
-  - completed: 已完成
-
-### 交易流程
-- 列印機註冊
-- 任務創建
-- 狀態更新
-- 收益提取
-
-## 新增功能
-- main.rs: 新增s按鍵， 按鍵功能按下去可以使3D列印機腳本自動執行 row: 131~138
-- app.rs:  新增對按鍵按下的反應   row: 368~379
-- ui.rs:   新增下方按鈕 row:350~354
+*Eureka is an experimental project developed during a hackathon, working together with Archimeters to build a decentralized solution that bridges digital design with physical manufacturing.* 🔬

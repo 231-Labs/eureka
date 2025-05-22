@@ -72,7 +72,7 @@ impl App {
         // start Gcode monitoring
         App::setup_gcode_monitoring(Arc::clone(&app_clone)).await;
         
-        // 執行實際列印腳本
+        // start print script
         tokio::spawn(async move {
             let current_dir = std::env::current_dir().unwrap_or_default();
             let script_path = current_dir.join("Gcode-Transmit").join("Gcode-Process.sh");
@@ -245,7 +245,7 @@ impl App {
             self.script_status = ScriptStatus::Idle;
             self.print_status = PrintStatus::Idle;
             
-            // 記錄輸出以便調試
+            // record output for debugging
             if !stdout.is_empty() {
                 self.print_output.push(format!("[STDOUT] {}", stdout));
             }
