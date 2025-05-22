@@ -1,6 +1,13 @@
-# 🛠️ Eureka - 3D Printing Smart Contract System
+# 🛠️ Eureka - 3D Printing TUI App Build on Sui
 
-> Physical Manufacturing Layer for the Archimeters Ecosystem 🔄
+<div align="center">
+
+**Physical Manufacturing Layer for the Archimeters Ecosystem 🔄**
+
+<img src="https://github.com/user-attachments/assets/53089412-ebde-4ce5-a943-7ea894c10352" alt="Snipaste_2025-05-22_15-57-23" width="600">
+
+</div>
+
 
 
 ## 📋 Project Overview
