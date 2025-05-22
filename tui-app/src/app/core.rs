@@ -139,13 +139,7 @@ impl App {
             script_status: ScriptStatus::Idle,
             print_status: PrintStatus::Idle,
             success_message: None,
-            // FIXME: remove this
-            print_output: vec![
-                "[STDOUT] initalizing...".to_string(),
-                "[STDOUT] checking connection...".to_string(),
-                "[STDERR] warning: temperature too high".to_string(),
-                "[STDOUT] calibration completed".to_string(),
-            ],  // initialize output list with test data
+            print_output: vec![],
         };
         
         // Check if printer registration is needed
@@ -157,6 +151,14 @@ impl App {
         // Set initial selection
         app.sculpt_state.select(Some(0));
         app.tasks_state.select(Some(0));
+        
+        // try to get print tasks
+        if app.printer_id != "No Printer ID" {
+            if let Err(e) = app.update_print_tasks().await {
+                println!("Failed to load initial print tasks: {:?}", e);
+            }
+        }
+        
         Ok(app)
     }
 
@@ -229,7 +231,7 @@ impl App {
     }
 
     pub async fn update_print_tasks(&mut self) -> Result<()> {
-        if self.is_online && self.printer_id != "No Printer ID" {
+        if self.printer_id != "No Printer ID" {
             // Get current active print task
             match self.wallet.get_active_print_job(&self.printer_id).await {
                 Ok(Some(task)) => {
@@ -244,6 +246,7 @@ impl App {
                         // New task defaults to idle state
                         self.print_status = PrintStatus::Idle;
                         self.script_status = ScriptStatus::Idle;
+                        self.set_message(MessageType::Success, format!("Found print task: {}", task.name));
                     } else {
                         // If task already exists, update its status
                         if let Some(existing_task) = self.tasks.iter_mut().find(|t| t.id == task.id) {
