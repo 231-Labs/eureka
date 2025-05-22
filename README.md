@@ -2,12 +2,11 @@
 
 <div align="center">
 
-**Physical Manufacturing Layer for the Archimeters Ecosystem 🔄**
+## Physical Manufacturing Layer for the Archimeters Ecosystem 🔄
 
-<img src="https://github.com/user-attachments/assets/53089412-ebde-4ce5-a943-7ea894c10352" alt="Snipaste_2025-05-22_15-57-23" width="600">
-
-</div>
-
+| Offline Mode                                                                                | Online Mode                                                                                 |
+|---------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------|
+| ![Image 1](https://github.com/user-attachments/assets/53089412-ebde-4ce5-a943-7ea894c10352) | ![Image 2](https://github.com/user-attachments/assets/da9837f7-9863-4900-9f82-d5113ab6ee39) |
 
 
 ## 📋 Project Overview
