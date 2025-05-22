@@ -4,7 +4,7 @@
 
 | Offline Mode                                                                                | Online Mode                                                                                 |
 |---------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------|
-| ![Image 1](https://github.com/user-attachments/assets/53089412-ebde-4ce5-a943-7ea894c10352) | ![Image 2](https://github.com/user-attachments/assets/da9837f7-9863-4900-9f82-d5113ab6ee39) |
+| ![Eureka_off_dark](https://github.com/user-attachments/assets/4057ba93-d8d8-4b55-99d3-c4834968e7b2) | ![eureka_online_dark](https://github.com/user-attachments/assets/3ee6c904-f95a-420c-a640-2ad83332505e) |
 
 
 ## 📋 Project Overview
