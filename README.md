@@ -1,7 +1,5 @@
 # 🛠️ Eureka - 3D Printing TUI App Build on Sui
 
-<div align="center">
-
 ## Physical Manufacturing Layer for the Archimeters Ecosystem 🔄
 
 | Offline Mode                                                                                | Online Mode                                                                                 |
