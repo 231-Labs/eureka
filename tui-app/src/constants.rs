@@ -5,9 +5,9 @@ pub const SCULPT_DEVNET_PACKAGE_ID: &str = "0x2571c1e364b5647e1ee17b43f9f289e5c6
 
 /// Testnet
 pub const WALRUS_COIN_TYPE: &str = "0x356a26eb9e012a68958082340d4c4116e7f55615cf27affcff209cf0ae544f59::wal::WAL";
-pub const EUREKA_TESTNET_PACKAGE_ID: &str = "0xae7f452d2cfe4ecb13be83d67cf706d4219aca0becf26fb3fb9d999e489d0ec4";
-pub const EUREKA_TESTNET_PRINTER_REGISTRY_ID: &str = "0xe2a996f1ea846d58304d2e7f3e17c2c744db7482fbcb7635be202a20c916f36c";
-pub const SCULPT_TESTNET_PACKAGE_ID: &str = "0xae7f452d2cfe4ecb13be83d67cf706d4219aca0becf26fb3fb9d999e489d0ec4";
+pub const EUREKA_TESTNET_PACKAGE_ID: &str = "0x81eac9c2b1857eb78af2453a46ea405ab3596a8101f1980bfa9b7600e576d801";
+pub const EUREKA_TESTNET_PRINTER_REGISTRY_ID: &str = "0x5b4c3ead9cc63796f0933cec5f222c4c6d8450b3190f1ba29fa8f0b1c3d1a693";
+pub const SCULPT_TESTNET_PACKAGE_ID: &str = "0x81eac9c2b1857eb78af2453a46ea405ab3596a8101f1980bfa9b7600e576d801";
 pub const AGGREGATOR_URL: &str = "https://walrus-agg-test.bucketprotocol.io";
 
 // Global constants
