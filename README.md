@@ -8,15 +8,14 @@
 
 
 ## 📋 Project Overview
-
-Eureka is an experimental decentralized 3D printing manufacturing network based on the Sui blockchain. It serves as a companion system for the [Archimeters](https://github.com/231-Labs/archimeters) parametric design platform, responsible for transforming digital designs into physical products. Currently in the prototype stage, it has implemented basic printer registration, task assignment, and revenue settlement (in development) functionalities.
+Eureka is a TUI application for 3D printing based on the Sui blockchain. It serves as a companion system for the [Archimeters](https://github.com/231-Labs/archimeters) parametric design platform, handling the transformation of digital designs into physical products. Currently in the prototype stage, it has implemented basic printer registration, task assignment, and revenue settlement (in development) functionalities. The long-term goal is to create a global distributed manufacturing network by increasing the number of users.
 
 ## 💻 Technical Implementation
 
 ### Hardware Platform
-- Optimized to run on Raspberry Pi 5 + Ubuntu environment
-- Low resource consumption, suitable for long-term stable operation
-- We aim to keep Eureka's hardware requirements accessible, allowing more users to experience distributed manufacturing
+- Designed to run on Raspberry Pi 5 + Ubuntu environment
+- Low resource consumption for stable operation
+- We aim to keep Eureka's hardware requirements accessible
 
 ### Smart Contracts (Move)
 - **PrinterRegistry**: Manages 3D printer registration and status
@@ -28,13 +27,13 @@ Eureka is an experimental decentralized 3D printing manufacturing network based 
 - Blockchain interaction via sui-sdk
 
 ### Why Choose a TUI Application?
-- Hardware-friendly: Performs excellently on resource-constrained devices (like Raspberry Pi) without requiring additional graphical processing resources
-- Cost-effective: Lowers the barrier to entry, enabling more people to join the manufacturing network at a low cost
+- Hardware-friendly: Works well on resource-constrained devices (like Raspberry Pi) without requiring additional graphical processing resources
+- Low barrier to entry: Enables more people to join the manufacturing network at a lower cost
 - Remote operation: Facilitates remote monitoring and management via SSH
 
 ## 🔄 Integration with Archimeters
 
-Eureka and Archimeters form a complete design-to-manufacturing ecosystem, enabling seamless transition from digital creativity to physical products:
+Eureka and Archimeters form a design-to-manufacturing ecosystem, enabling transition from digital creativity to physical products:
 
 ### Design → Manufacturing Bridge 🌉
 - **On-chain Asset Access**: Direct access to design files and parameters stored in Walrus
@@ -42,26 +41,29 @@ Eureka and Archimeters form a complete design-to-manufacturing ecosystem, enabli
   - Offline mode for printing 3D models from the user's wallet
   - Online mode for receiving commissioned tasks from the Archimeters platform
 
-### Intelligent Manufacturing Layer 🏭
-- **Automated Workflow**: One-click startup feature simplifies the entire process from accepting orders to completion
-- **Real-time Status Synchronization**: Print progress is recorded on-chain in real-time, ensuring transparency
-- **G-code Converter**: Automatically converts design parameters into executable instructions for the printer
+### Manufacturing Layer 🏭
+- **Automated Workflow**: One-click startup simplifies the process from accepting orders to completion
+- **Status Synchronization**: Print progress is recorded on-chain for transparency
+- **G-code Converter**: Converts design parameters into executable instructions for the printer
 
 ### Economic Incentive System (In Development) 💸
-- **Instant Settlement**: Manufacturing revenue is automatically distributed upon task completion
-- **On-demand Manufacturing**: Transforms designs into physical products instantly, reducing resource waste
-- **Decentralized Marketplace**: Connects designers and printing resource providers globally
+- **Revenue Settlement**: Manufacturing revenue is distributed upon task completion
+- **On-demand Manufacturing**: Transforms designs into physical products, reducing resource waste
+- **Future Manufacturing Network**: Plans to connect designers and printing resource providers globally
 
 ## 🧪 Development Status
 
-The project is currently in the experimental prototype stage. Implemented features include:
+The project is currently in the experimental prototype stage as a TUI application. Implemented features include:
 - Basic contract structure and printer registration
 - TUI application framework with blockchain interaction
 - On-chain printing task status
 
 Under development:
 - Commissioned printing task payment mechanism
-- Integration of Seal decryption functionality for complete NFT access control
+- Integration of Seal decryption functionality for NFT access control
+
+Future goals:
+- Scaling to a global distributed manufacturing network through user adoption
 
 ## 🚀 Usage
 
