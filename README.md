@@ -86,7 +86,7 @@ Eureka and Archimeters form a design-to-manufacturing ecosystem, enabling transi
   * Offline mode for printing 3D models from the user's wallet
   * Online mode for receiving commissioned tasks from the Archimeters platform
 
-### Manufacturing Layer 🏠
+### Manufacturing Layer 🏭
 
 * **Automated Workflow**: One-click startup simplifies the process from accepting orders to completion
 * **Status Synchronization**: Print progress is recorded on-chain for transparency
