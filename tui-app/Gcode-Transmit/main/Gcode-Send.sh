@@ -15,5 +15,5 @@ rm -rf "$PARENT_DIR/test.stl"
 echo $! > "$SCRIPT_DIR/Gcode-Send-PID.pid"
 # echo $! > Gcode-Send-PID.pid
 wait $!
-rm -rf test.gcode
+rm -rf "$PARENT_DIR/test.gcode"
 
