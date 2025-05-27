@@ -17,6 +17,9 @@ tui-app/Gcode-Transmit/test.gcode
 tui-app/Gcode-Transmit/test.stl
 tui-app/Gcode-Transmit/Gcode-Send-PID.pid
 tui-app/Gcode-Transmit/W-copy.sh
+# Also ignore files in main subdirectory
+tui-app/Gcode-Transmit/main/test.gcode
+tui-app/Gcode-Transmit/main/Gcode-Send-PID.pid
 # Environment
 .env
 .env.*
