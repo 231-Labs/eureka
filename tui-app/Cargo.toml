@@ -18,3 +18,7 @@ futures = "0.3"
 tokio = { version = "1.2", features = ["full", "macros"] }
 textwrap = "0.16"
 serde_json = "1.0"
+
+# Seal SDK for decryption
+seal-sdk-rs = { git = "https://github.com/gfusee/seal-sdk-rs", tag = "0.0.2", features = ["native-sui-sdk"] }
+reqwest = { version = "0.11", features = ["json"] }

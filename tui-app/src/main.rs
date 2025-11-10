@@ -20,6 +20,7 @@ mod utils;
 mod wallet;
 mod ui;
 mod transactions;
+mod seal;
 
 use app::App;
 

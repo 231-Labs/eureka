@@ -54,7 +54,7 @@ module archimeters::sculpt {
         );
         display.add(
             b"link".to_string(),
-            b"https://archimeters.vercel.app/".to_string() 
+            b"https://archimeters.vercel.app/".to_string()
         );
         display.add(
             b"description".to_string(),

@@ -6,6 +6,8 @@ pub struct SculptItem {
     pub blob_id: String,
     pub printed_count: u64,
     pub id: String,
+    pub is_encrypted: bool,
+    pub seal_resource_id: Option<String>, // Format: "packageId:id" for Seal decryption
 }
 
 #[derive(Debug, Clone)]

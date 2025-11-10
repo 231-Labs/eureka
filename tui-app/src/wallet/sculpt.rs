@@ -12,6 +12,7 @@ use sui_sdk::{
 };
 use super::client::Wallet;
 use super::types::SculptItem;
+use crate::seal::types::SealResourceMetadata;
 
 impl Wallet {
     // Get user's sculpt (3D model) items
@@ -44,6 +45,8 @@ impl Wallet {
                 blob_id: String::new(),
                 printed_count: 0,
                 id: String::new(),
+                is_encrypted: false,
+                seal_resource_id: None,
             }]
         } else {
             let mut items = sculpt_items;
@@ -79,11 +82,22 @@ impl Wallet {
                         sui_sdk::rpc_types::SuiMoveValue::String(printed_str),
                         sui_sdk::rpc_types::SuiMoveValue::String(alias_str)
                     ) => {
+                        // 檢查是否有 seal_resource_id 字段（可選）
+                        let seal_resource_id = fields.get("seal_resource_id")
+                            .and_then(|v| match v {
+                                sui_sdk::rpc_types::SuiMoveValue::String(s) if !s.is_empty() => Some(s.clone()),
+                                _ => None,
+                            });
+                        
+                        let is_encrypted = seal_resource_id.is_some();
+                        
                         Some(SculptItem {
                             alias: alias_str.clone(),
                             blob_id: structure_id.clone(),
                             printed_count: printed_str.parse::<u64>().unwrap_or(0),
                             id: object_id,
+                            is_encrypted,
+                            seal_resource_id,
                         })
                     },
                     _ => None,

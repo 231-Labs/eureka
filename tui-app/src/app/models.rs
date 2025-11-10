@@ -1,5 +1,7 @@
 use crate::app::core::App;
 use crate::constants::AGGREGATOR_URL;
+use crate::seal::SealDecryptor;
+use crate::seal::types::SealResourceMetadata;
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -7,7 +9,8 @@ use std::fs;
 use std::path::Path;
 
 impl App {
-    pub async fn download_3d_model(&mut self, blob_id: &str) -> Result<()> {
+    /// download 3D model from Walrus
+    pub async fn download_3d_model(&mut self, blob_id: &str, seal_resource_id: Option<&str>) -> Result<()> {
         let url = format!("{}/v1/blobs/{}", AGGREGATOR_URL, blob_id);
         
         // Get current directory
@@ -39,12 +42,72 @@ impl App {
             return Err(anyhow::anyhow!("Failed to download 3D model"));
         }
 
+        // 檢查是否需要解密
+        if let Some(resource_id_str) = seal_resource_id {
+            self.print_output.push(format!("[LOG] 🔐 Encrypted model detected, attempting to decrypt..."));
+            self.print_output.push(format!("[LOG] 🔐 Seal Resource ID: {}", resource_id_str));
+            
+            // 嘗試解密文件
+            match self.decrypt_model_file(&temp_path, resource_id_str).await {
+                Ok(_) => {
+                    self.print_output.push(format!("[LOG] ✅ Model decrypted successfully"));
+                }
+                Err(e) => {
+                    self.print_output.push(format!("[LOG] ❌ Decryption failed: {}", e));
+                    self.set_message(crate::app::MessageType::Error, format!("Failed to decrypt model: {}", e));
+                    return Err(anyhow::anyhow!("Failed to decrypt model: {}", e));
+                }
+            }
+        }
+
         // move file to target directory
         if let Err(e) = fs::rename(&temp_path, &final_path) {
             self.set_message(crate::app::MessageType::Error, format!("Failed to move 3D model: {}", e));
             return Err(anyhow::anyhow!("Failed to move 3D model: {}", e));
         }
         self.set_message(crate::app::MessageType::Success, "3D model downloaded successfully".to_string());
+        Ok(())
+    }
+
+    /// decrypt model file encrypted with Seal
+    async fn decrypt_model_file(&mut self, file_path: &Path, resource_id_str: &str) -> Result<()> {
+        // parse resource ID
+        let seal_metadata = SealResourceMetadata::from_resource_id_string(resource_id_str)?;
+        
+        // read encrypted file
+        let encrypted_data = tokio::fs::read(file_path).await?;
+        
+        // check if file is really encrypted
+        if !SealDecryptor::is_file_encrypted(&encrypted_data) {
+            self.print_output.push(format!("[LOG] ⚠️  File appears to be unencrypted, skipping decryption"));
+            return Ok(());
+        }
+        
+        // get RPC URL and wallet config path
+        let rpc_url = self.network_state.get_current_network().rpc_url.clone();
+        let wallet_config_path = dirs::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("Cannot find home directory"))?
+            .join(".sui")
+            .join("sui_config")
+            .join("client.yaml");
+        
+        // create Seal decryptor
+        self.print_output.push(format!("[LOG] 🔐 Initializing Seal decryption service..."));
+        let decryptor = SealDecryptor::new(rpc_url, wallet_config_path).await?;
+        
+        // decrypt
+        self.print_output.push(format!("[LOG] 🔐 Decrypting with package_id: {}", seal_metadata.package_id));
+        self.print_output.push(format!("[LOG] 🔐 Resource ID: {}", seal_metadata.resource_id));
+        
+        let decrypted_data = decryptor.decrypt_stl(
+            encrypted_data,
+            &seal_metadata.package_id,
+            &seal_metadata.resource_id,
+        ).await?;
+        
+        // 寫回解密後的文件
+        tokio::fs::write(file_path, decrypted_data).await?;
+        
         Ok(())
     }
 
@@ -70,7 +133,7 @@ impl App {
                     // download model
                     let download_result = {
                         let mut app = app_clone.lock().await;
-                        app.download_3d_model(&item.blob_id).await
+                        app.download_3d_model(&item.blob_id, item.seal_resource_id.as_deref()).await
                     };
 
                     // process download result
@@ -159,9 +222,10 @@ impl App {
                 }
                 
                 // Download model
+                // TODO: Tasks 需要支持 seal_resource_id 字段
                 let download_result = {
                     let mut app = app_clone.lock().await;
-                    app.download_3d_model(&task.sculpt_structure).await
+                    app.download_3d_model(&task.sculpt_structure, None).await
                 };
 
                 // Handle download result

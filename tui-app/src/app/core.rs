@@ -103,6 +103,8 @@ impl App {
                 blob_id: String::new(),
                 printed_count: 0,
                 id: String::new(),
+                is_encrypted: false,
+                seal_resource_id: None,
             }]
         };
         
