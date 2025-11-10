@@ -12,7 +12,6 @@ use sui_sdk::{
 };
 use super::client::Wallet;
 use super::types::SculptItem;
-use crate::seal::types::SealResourceMetadata;
 
 impl Wallet {
     // Get user's sculpt (3D model) items
@@ -75,28 +74,29 @@ impl Wallet {
                 let structure = fields.get("structure")?;
                 let printed = fields.get("printed")?;
                 let alias = fields.get("alias")?;
+                let encrypted = fields.get("encrypted")?;
+                let seal_resource_id_field = fields.get("seal_resource_id");
 
-                match (structure, printed, alias) {
+                match (structure, printed, alias, encrypted) {
                     (
                         sui_sdk::rpc_types::SuiMoveValue::String(structure_id),
                         sui_sdk::rpc_types::SuiMoveValue::String(printed_str),
-                        sui_sdk::rpc_types::SuiMoveValue::String(alias_str)
+                        sui_sdk::rpc_types::SuiMoveValue::String(alias_str),
+                        sui_sdk::rpc_types::SuiMoveValue::Bool(is_encrypted)
                     ) => {
-                        // 檢查是否有 seal_resource_id 字段（可選）
-                        let seal_resource_id = fields.get("seal_resource_id")
+                        // Parse Option<String> seal_resource_id
+                        let seal_resource_id = seal_resource_id_field
                             .and_then(|v| match v {
                                 sui_sdk::rpc_types::SuiMoveValue::String(s) if !s.is_empty() => Some(s.clone()),
                                 _ => None,
                             });
-                        
-                        let is_encrypted = seal_resource_id.is_some();
                         
                         Some(SculptItem {
                             alias: alias_str.clone(),
                             blob_id: structure_id.clone(),
                             printed_count: printed_str.parse::<u64>().unwrap_or(0),
                             id: object_id,
-                            is_encrypted,
+                            is_encrypted: *is_encrypted,
                             seal_resource_id,
                         })
                     },

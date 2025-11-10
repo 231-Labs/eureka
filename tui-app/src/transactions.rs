@@ -152,8 +152,8 @@ impl TransactionExecutor {
     async fn sign_and_execute(&self, tx_data: TransactionData) -> Result<SuiTransactionBlockResponse> {
         // Sign transaction
         let keystore_path = PathBuf::from(std::env::var("HOME")?).join(".sui").join("sui_config").join("sui.keystore");
-        let keystore = FileBasedKeystore::new(&keystore_path)?;
-        let signature = keystore.sign_secure(&self.sender, &tx_data, Intent::sui_transaction())?;
+        let keystore = FileBasedKeystore::load_or_create(&keystore_path)?;
+        let signature = keystore.sign_secure(&self.sender, &tx_data, Intent::sui_transaction()).await?;
 
         // Execute transaction and wait for confirmation
         let transaction_response = self.sui_client
@@ -257,7 +257,7 @@ impl TransactionBuilder {
         let registry_arg = CallArg::Object(ObjectArg::SharedObject {
             id: registry_id,
             initial_shared_version: registry_version.into(),
-            mutable: true,
+            mutability: sui_types::transaction::SharedObjectMutability::Mutable,
         });
         
         // Create printer name argument
@@ -321,7 +321,11 @@ impl TransactionBuilder {
         Ok(CallArg::Object(ObjectArg::SharedObject {
             id: object_id,
             initial_shared_version: version.into(),
-            mutable,
+            mutability: if mutable {
+                sui_types::transaction::SharedObjectMutability::Mutable
+            } else {
+                sui_types::transaction::SharedObjectMutability::Immutable
+            },
         }))
     }
 

@@ -42,12 +42,12 @@ impl App {
             return Err(anyhow::anyhow!("Failed to download 3D model"));
         }
 
-        // 檢查是否需要解密
+        // check if need to decrypt
         if let Some(resource_id_str) = seal_resource_id {
             self.print_output.push(format!("[LOG] 🔐 Encrypted model detected, attempting to decrypt..."));
             self.print_output.push(format!("[LOG] 🔐 Seal Resource ID: {}", resource_id_str));
             
-            // 嘗試解密文件
+            // try to decrypt file
             match self.decrypt_model_file(&temp_path, resource_id_str).await {
                 Ok(_) => {
                     self.print_output.push(format!("[LOG] ✅ Model decrypted successfully"));
@@ -84,7 +84,7 @@ impl App {
         }
         
         // get RPC URL and wallet config path
-        let rpc_url = self.network_state.get_current_network().rpc_url.clone();
+        let rpc_url = self.network_state.get_current_rpc().to_string();
         let wallet_config_path = dirs::home_dir()
             .ok_or_else(|| anyhow::anyhow!("Cannot find home directory"))?
             .join(".sui")
@@ -222,7 +222,7 @@ impl App {
                 }
                 
                 // Download model
-                // TODO: Tasks 需要支持 seal_resource_id 字段
+                // TODO: Tasks need to support seal_resource_id field
                 let download_result = {
                     let mut app = app_clone.lock().await;
                     app.download_3d_model(&task.sculpt_structure, None).await

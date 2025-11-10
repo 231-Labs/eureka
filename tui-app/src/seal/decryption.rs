@@ -6,6 +6,7 @@ use seal_sdk_rs::native_sui_sdk::sui_sdk::wallet_context::WalletContext;
 use seal_sdk_rs::generic_types::ObjectID;
 use seal_sdk_rs::native_sui_sdk::sui_types::Identifier;
 use seal_sdk_rs::native_sui_sdk::sui_types::programmable_transaction_builder::ProgrammableTransactionBuilder;
+use seal_sdk_rs::native_sui_sdk::sui_types::transaction::ProgrammableTransaction;
 use std::str::FromStr;
 use std::path::PathBuf;
 
@@ -54,7 +55,7 @@ impl SealDecryptor {
         // create approval transaction
         let approval_tx = self.create_approval_transaction(pkg_id, resource_id)?;
 
-        // 解密數據
+        // decrypt data
         let decrypted = self.seal_client
             .decrypt_object_bytes(
                 &encrypted_data,
@@ -67,19 +68,19 @@ impl SealDecryptor {
         Ok(decrypted)
     }
 
-    /// 創建 Seal approval 交易
+    /// Create Seal approval transaction
     fn create_approval_transaction(
         &self,
         package_id: ObjectID,
         resource_id: &str,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<ProgrammableTransaction> {
         let mut builder = ProgrammableTransactionBuilder::new();
         
-        // 將 resource_id 轉為 bytes
+        // Convert resource_id to bytes
         let id_arg = builder.pure(resource_id.as_bytes().to_vec())
             .map_err(|e| anyhow::anyhow!("Failed to create ID argument: {}", e))?;
         
-        // 調用 seal_approve 函數
+        // Call seal_approve function
         builder.programmable_move_call(
             package_id.into(),
             Identifier::from_str("sculpt")
@@ -90,19 +91,10 @@ impl SealDecryptor {
             vec![id_arg],
         );
 
-        Ok(bcs::to_bytes(&builder.finish())?)
+        Ok(builder.finish())
     }
 
-    /// 從 Walrus 下載並解密 STL 檔案
-    /// 
-    /// # Arguments
-    /// * `blob_id` - Walrus blob ID
-    /// * `package_id` - Move 合約的 Package ID
-    /// * `resource_id` - 資源 ID
-    /// * `output_path` - 輸出檔案路徑
-    /// 
-    /// # Returns
-    /// 成功時返回 ()
+    /// download and decrypt STL file from Walrus
     pub async fn download_and_decrypt(
         &self,
         blob_id: &str,
@@ -110,20 +102,19 @@ impl SealDecryptor {
         resource_id: &str,
         output_path: PathBuf,
     ) -> Result<()> {
-        // 1. 從 Walrus 下載加密檔案
         let encrypted_data = self.download_from_walrus(blob_id).await?;
 
-        // 2. 解密
+        // decrypt
         let decrypted_data = self.decrypt_stl(encrypted_data, package_id, resource_id).await?;
 
-        // 3. 寫入檔案
+        // write to file
         tokio::fs::write(&output_path, decrypted_data).await
             .map_err(|e| anyhow::anyhow!("Failed to write decrypted file: {}", e))?;
 
         Ok(())
     }
 
-    /// 從 Walrus 下載檔案
+    /// download file from Walrus
     async fn download_from_walrus(&self, blob_id: &str) -> Result<Vec<u8>> {
         let url = format!(
             "https://aggregator.walrus-testnet.walrus.space/v1/{}",
@@ -149,29 +140,25 @@ impl SealDecryptor {
         Ok(bytes.to_vec())
     }
 
-    /// 檢查檔案是否加密（簡單啟發式檢查）
+    /// check if file is encrypted (simple heuristic check)
     pub fn is_file_encrypted(data: &[u8]) -> bool {
-        // STL 檔案應該以 "solid" 開頭（ASCII）或特定的二進制頭
+
         if data.len() < 5 {
-            return true; // 太小，可能是加密的
+            return true; // too small, probably encrypted
         }
 
-        // 檢查 ASCII STL 簽名
         let header = String::from_utf8_lossy(&data[..5]);
         if header.starts_with("solid") {
-            return false; // 未加密的 ASCII STL
+            return false; // unencrypted ASCII STL
         }
 
-        // 檢查二進制 STL 簽名（80 字節頭 + 4 字節三角形計數）
         if data.len() > 84 {
-            // 簡單檢查：二進制 STL 通常有合理的三角形計數
             let triangle_count = u32::from_le_bytes([data[80], data[81], data[82], data[83]]);
             if triangle_count > 0 && triangle_count < 1_000_000 {
-                return false; // 可能是未加密的二進制 STL
+                return false; // probably unencrypted binary STL
             }
         }
-
-        // 其他情況假設是加密的
+        
         true
     }
 }

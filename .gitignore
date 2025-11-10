@@ -28,6 +28,6 @@ Thumbs.db
 # Ignore sui-examples directory
 sui-examples/
 
-# Ignore Seal related directories
-seal/
-seal-ts-sdk/
+# Ignore Seal related directories (root level only)
+/seal/
+/seal-ts-sdk/

@@ -55,7 +55,7 @@ pub async fn setup_for_read(network_state: &NetworkState) -> Result<(SuiClient, 
         .join("sui_config")
         .join("client.yaml");
         
-    let mut context = WalletContext::new(&config_path, None, None)?;
+    let mut context = WalletContext::new(&config_path)?;
     let active_address = context.active_address()?;
     
     Ok((sui, active_address))
