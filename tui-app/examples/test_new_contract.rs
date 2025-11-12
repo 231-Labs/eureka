@@ -91,7 +91,7 @@ async fn main() -> Result<()> {
 
     // Decrypt using Seal SDK
     println!("🔓 Decrypting...");
-    decrypt_sculpt(&setup, sculpt_id, printer_id, &seal_id, encrypted_object).await?;
+    decrypt_sculpt(&setup, &seal_id, sculpt_id, printer_id, encrypted_object).await?;
 
     println!("✅ Decryption completed successfully!");
     Ok(())
@@ -183,9 +183,9 @@ fn extract_option_string_field(
 /// Decrypt sculpt using Seal SDK
 async fn decrypt_sculpt(
     setup: &DemoSetup,
+    seal_id: &str,
     _sculpt_id: ObjectID,
     printer_id: ObjectID,
-    seal_id: &str,
     encrypted: seal_sdk_rs::crypto::EncryptedObject,
 ) -> Result<()> {
     // Connect to Sui testnet
@@ -229,8 +229,12 @@ async fn decrypt_sculpt(
         .map_err(|e| anyhow::anyhow!("Failed to decode hex ID: {}", e))?;
     
     // Prepare arguments for seal_approve
+    // IMPORTANT: Seal SDK requires _id to be the FIRST parameter
     let id_arg = builder.pure(id_bytes)?;
-    let printer_id_arg = builder.pure(bcs::to_bytes(&printer_id)?)?;
+    
+    // printer_id as ID (address) - convert ObjectID to bytes directly, not BCS serialized
+    let printer_id_bytes = printer_id.into_bytes();
+    let printer_id_arg = builder.pure(printer_id_bytes.to_vec())?;
 
     // Call seal_approve function in the sculpt module
     // Parameters: _id: vector<u8>, _printer_id: ID
