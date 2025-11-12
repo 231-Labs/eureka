@@ -32,17 +32,12 @@ struct DemoSetup {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("🔐 Archimeters Sculpt Decryption Test");
-    println!("=====================================\n");
-
     // Get sculpt_id from command line arguments
     let sculpt_id_str = std::env::args()
         .nth(1)
         .ok_or_else(|| anyhow::anyhow!("Usage: cargo run --example test_new_contract -- <sculpt_id>"))?;
     
-    println!("📋 Configuration:");
-    println!("  Sculpt ID: {}", sculpt_id_str);
-    println!();
+    println!("🔐 Decrypting Sculpt: {}", sculpt_id_str);
 
     // Configuration - New Archimeters package (constant)
     let package_id_str = "0x73d08645087a5a7c01a619cb32df1ee06f904cbc268976e3eae0885bbf742150";
@@ -67,80 +62,42 @@ async fn main() -> Result<()> {
         key_server_ids,
     };
 
-    // Connect to Sui testnet to fetch sculpt information
-    println!("🔗 Connecting to Sui testnet...");
+    // Connect to Sui testnet and fetch sculpt information
     let sui_client = SuiClientBuilder::default()
         .build("https://fullnode.testnet.sui.io:443")
         .await?;
-    println!("   ✅ Connected\n");
-
-    // Fetch sculpt object from chain
-    println!("📥 Fetching sculpt information from chain...");
-    let (encrypted_blob_id, seal_resource_id) = fetch_sculpt_info(&sui_client, sculpt_id).await?;
     
-    println!("   ✅ Sculpt information retrieved:");
-    println!("      Encrypted Blob ID: {}", encrypted_blob_id);
-    println!("      Seal Resource ID: {}", seal_resource_id.as_ref().unwrap_or(&"None".to_string()));
-    println!();
+    let (encrypted_blob_id, seal_resource_id) = fetch_sculpt_info(&sui_client, sculpt_id).await?;
 
     // Check if sculpt is encrypted
     let seal_id = match seal_resource_id {
         Some(id) => id,
-        None => {
-            println!("❌ Sculpt is not encrypted (no seal_resource_id found)");
-            return Err(anyhow::anyhow!("Sculpt is not encrypted"));
-        }
+        None => return Err(anyhow::anyhow!("Sculpt is not encrypted")),
     };
 
-    // Download encrypted STL from Walrus
-    println!("📥 Downloading encrypted STL from Walrus...");
+    // Download and parse encrypted data
+    println!("📥 Downloading from Walrus...");
     let encrypted_data = download_encrypted_data(&encrypted_blob_id).await?;
-    println!("   ✅ Downloaded: {} bytes", encrypted_data.len());
-    
-    // Save raw encrypted data for inspection
-    std::fs::write("encrypted_raw.bin", &encrypted_data)?;
-    println!("   💾 Saved raw data to: encrypted_raw.bin");
-    println!();
-
-    // Try to parse as EncryptedObject
-    println!("🔄 Parsing encrypted data...");
-    let encrypted_object = match parse_encrypted_object(&encrypted_data) {
-        Ok(obj) => {
-            println!("   ✅ Successfully parsed as EncryptedObject");
-            obj
-        }
-        Err(e) => {
-            println!("   ❌ Failed to parse as EncryptedObject: {}", e);
-            println!("   ℹ️  The data might be in a different format");
-            println!("   ℹ️  First 100 bytes (hex): {}", hex::encode(&encrypted_data[..std::cmp::min(100, encrypted_data.len())]));
-            return Err(anyhow::anyhow!("Failed to parse encrypted data"));
-        }
-    };
-    println!();
+    let encrypted_object = parse_encrypted_object(&encrypted_data)?;
 
     // Decrypt using Seal SDK
-    println!("🔐 Starting decryption...");
-    if let Err(e) = decrypt_sculpt(&setup, &seal_id, encrypted_object).await {
-        println!("❌ Decryption failed: {:?}", e);
-        return Err(e);
-    }
+    println!("🔓 Decrypting...");
+    decrypt_sculpt(&setup, &seal_id, encrypted_object).await?;
 
-    println!("\n✅ Decryption test completed successfully!");
+    println!("✅ Decryption completed successfully!");
     Ok(())
 }
 
 /// Download encrypted data from Walrus
 async fn download_encrypted_data(blob_id: &str) -> Result<Vec<u8>> {
     let url = format!("https://aggregator.walrus-testnet.walrus.space/v1/blobs/{}", blob_id);
-    println!("   URL: {}", url);
-
     let response = reqwest::get(&url).await?;
+    
     if !response.status().is_success() {
         return Err(anyhow::anyhow!("Failed to download: HTTP {}", response.status()));
     }
 
-    let bytes = response.bytes().await?;
-    Ok(bytes.to_vec())
+    Ok(response.bytes().await?.to_vec())
 }
 
 /// Parse encrypted data as EncryptedObject
@@ -234,17 +191,14 @@ async fn decrypt_sculpt(
 
     let mut wallet = WalletContext::new(Path::new(&wallet_path))?;
     
-    println!("   📝 Creating session key...");
     let session_key = SessionKey::new(
         setup.approve_package_id,
         10,
         &mut wallet,
     )
     .await?;
-    println!("   ✅ Session key created");
 
     // Build approval transaction
-    println!("   📝 Building approval transaction...");
     let mut builder = ProgrammableTransactionBuilder::new();
 
     // seal_id format: "package_id:resource_id"
@@ -263,10 +217,6 @@ async fn decrypt_sculpt(
     let id_bytes = hex::decode(id_hex)
         .map_err(|e| anyhow::anyhow!("Failed to decode hex ID: {}", e))?;
     
-    println!("   🔑 Full seal_id: {}", seal_id);
-    println!("   🔑 Extracted resource_id (hex): {}", id_hex);
-    println!("   🔑 ID bytes length: {}", id_bytes.len());
-    
     let id_arg = builder.pure(id_bytes)?;
 
     // Call seal_approve function in the sculpt module
@@ -274,15 +224,13 @@ async fn decrypt_sculpt(
         setup.approve_package_id.into(),
         Identifier::from_str("sculpt")?,
         Identifier::from_str("seal_approve")?,
-        vec![],  // No type arguments
-        vec![id_arg],  // ID parameter (excluding package_id prefix)
+        vec![],
+        vec![id_arg],
     );
 
     let approve_ptb: ProgrammableTransaction = builder.finish();
-    println!("   ✅ Approval transaction built");
 
     // Decrypt
-    println!("   🔓 Decrypting...");
     let plaintext = client
         .decrypt_object_bytes(
             &bcs::to_bytes(&encrypted)?,
@@ -291,46 +239,19 @@ async fn decrypt_sculpt(
         )
         .await?;
 
-    println!("   ✅ Decryption successful!");
-    println!("   📊 Decrypted size: {} bytes", plaintext.len());
-
-    // Save decrypted STL
+    // Save and verify decrypted STL
     let output_file = "decrypted_sculpt.stl";
     std::fs::write(output_file, &plaintext)?;
-    println!("   💾 Saved to: {}", output_file);
-
-    // Verify STL format
-    if plaintext.starts_with(b"solid") {
-        println!("   ✅ Output is ASCII STL format");
-        // Show first few lines
-        let text = String::from_utf8_lossy(&plaintext[..std::cmp::min(200, plaintext.len())]);
-        println!("   📄 Preview:\n{}", text);
+    
+    let format = if plaintext.starts_with(b"solid") {
+        "ASCII STL"
     } else if plaintext.len() > 84 {
-        let header = &plaintext[0..80];
-        let triangle_count_bytes = &plaintext[80..84];
-        let triangle_count = u32::from_le_bytes([
-            triangle_count_bytes[0],
-            triangle_count_bytes[1],
-            triangle_count_bytes[2],
-            triangle_count_bytes[3],
-        ]);
-        
-        println!("   ✅ Output is Binary STL format");
-        println!("   📄 Header: {}", String::from_utf8_lossy(header));
-        println!("   📊 Triangle count: {}", triangle_count);
-        
-        // Verify expected file size (80 header + 4 count + 50 bytes per triangle)
-        let expected_size = 80 + 4 + (triangle_count as usize * 50);
-        if plaintext.len() == expected_size {
-            println!("   ✅ File size matches expected: {} bytes", expected_size);
-        } else {
-            println!("   ⚠️  File size mismatch. Expected: {}, Got: {}", expected_size, plaintext.len());
-        }
+        "Binary STL"
     } else {
-        println!("   ⚠️  Output format unclear");
-        println!("   📄 First 100 bytes (hex): {}", hex::encode(&plaintext[..std::cmp::min(100, plaintext.len())]));
-    }
-
+        "Unknown"
+    };
+    
+    println!("💾 Saved: {} ({}, {} bytes)", output_file, format, plaintext.len());
     Ok(())
 }
 
