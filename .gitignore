@@ -30,4 +30,4 @@ sui-examples/
 
 # Ignore Seal related directories (root level only)
 /seal/
-/seal-ts-sdk/
+/seal-ts-sdk/decrypted_sculpt_printjob.stl
