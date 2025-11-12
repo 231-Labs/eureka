@@ -47,8 +47,8 @@ async fn main() -> Result<()> {
     println!("🔐 Decrypting Sculpt: {}", sculpt_id_str);
     println!("🖨️  Printer ID: {}", printer_id_str);
 
-    // Configuration - New Archimeters package (constant)
-    let package_id_str = "0x5752c294a95d430ea0042f2d202d160ea4b4ec74b55212a1ec5dd8a87e5d02dd";
+    // Configuration - New Archimeters package with printer_id parameter
+    let package_id_str = "0x9a4790f287d6571f1b984577a4a4bb8bfc656b7126c01aa8a8a8881dca073ba7";
     
     // Key Servers (matching frontend config - all 3 servers with threshold=1)
     let key_server_strs = vec![
