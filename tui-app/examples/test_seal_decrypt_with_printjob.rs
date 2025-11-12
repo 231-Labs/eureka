@@ -28,15 +28,15 @@ use bcs;
 /// - printer: shared object reference
 /// - printer_cap: owned object reference
 /// 
-/// Usage: cargo run --example test_seal_decrypt_with_printjob -- <sculpt_id> <printer_id> <printer_cap_id>
+/// Usage: cargo run --example test_seal_decrypt_with_printjob -- <printer_id> <printer_cap_id>
 /// 
 /// Example: 
 /// cargo run --example test_seal_decrypt_with_printjob -- \
-///   0x123...sculpt \
 ///   0xabc...printer \
 ///   0xdef...printer_cap
 /// 
 /// Note: A PrintJob must exist for the printer before running this test!
+/// The sculpt_id will be automatically fetched from the PrintJob.
 
 struct DemoSetup {
     approve_package_id: seal_sdk_rs::generic_types::ObjectID,
@@ -49,19 +49,18 @@ async fn main() -> Result<()> {
     // Get arguments from command line
     let args: Vec<String> = std::env::args().collect();
     
-    if args.len() < 4 {
-        eprintln!("Usage: {} <sculpt_id> <printer_id> <printer_cap_id>", args[0]);
+    if args.len() < 3 {
+        eprintln!("Usage: {} <printer_id> <printer_cap_id>", args[0]);
         eprintln!("\nNote: Make sure a PrintJob exists for this printer!");
+        eprintln!("      The sculpt_id will be fetched from PrintJob automatically.");
         std::process::exit(1);
     }
     
-    let sculpt_id_str = &args[1];
-    let printer_id_str = &args[2];
-    let printer_cap_id_str = &args[3];
+    let printer_id_str = &args[1];
+    let printer_cap_id_str = &args[2];
     
     println!("🔐 E2E Seal Decryption Test (PrintJob-based Auth)");
     println!("==================================================");
-    println!("   Sculpt: {}", sculpt_id_str);
     println!("   Printer: {}", printer_id_str);
     println!();
 
@@ -77,7 +76,6 @@ async fn main() -> Result<()> {
 
     // Parse IDs
     let approve_package_id: SealObjectID = eureka_package_id_str.parse()?;
-    let sculpt_id: SuiObjectID = SuiObjectID::from_hex_literal(sculpt_id_str)?;
     let printer_id: SuiObjectID = SuiObjectID::from_hex_literal(printer_id_str)?;
     let printer_cap_id: SuiObjectID = SuiObjectID::from_hex_literal(printer_cap_id_str)?;
     let key_server_ids: Vec<SealObjectID> = key_server_strs
@@ -90,11 +88,18 @@ async fn main() -> Result<()> {
         key_server_ids,
     };
 
-    // Connect to Sui testnet and fetch sculpt information
+    // Connect to Sui testnet
     let sui_client = SuiClientBuilder::default()
         .build("https://fullnode.testnet.sui.io:443")
         .await?;
     
+    // Fetch sculpt_id from PrintJob
+    println!("🔍 Fetching PrintJob from printer...");
+    let sculpt_id = fetch_sculpt_id_from_printjob(&sui_client, printer_id).await?;
+    println!("   ✅ Sculpt ID: {}", sculpt_id);
+    println!();
+    
+    // Fetch sculpt information
     let (encrypted_blob_id, seal_resource_id, printer_version) = 
         fetch_sculpt_and_objects(&sui_client, sculpt_id, printer_id).await?;
 
@@ -141,6 +146,69 @@ fn parse_encrypted_object(data: &[u8]) -> Result<seal_sdk_rs::crypto::EncryptedO
     let encrypted: seal_sdk_rs::crypto::EncryptedObject = bcs::from_bytes(data)
         .map_err(|e| anyhow::anyhow!("BCS deserialization failed: {}", e))?;
     Ok(encrypted)
+}
+
+/// Fetch sculpt_id from printer's PrintJob dynamic field
+async fn fetch_sculpt_id_from_printjob(
+    sui_client: &seal_sdk_rs::native_sui_sdk::sui_sdk::SuiClient,
+    printer_id: SuiObjectID,
+) -> Result<SuiObjectID> {
+    // Get dynamic fields
+    let dynamic_fields = sui_client
+        .read_api()
+        .get_dynamic_fields(printer_id, None, None)
+        .await?;
+
+    // Find print_job field (name.value is a vector<u8>)
+    let print_job_field = dynamic_fields
+        .data
+        .iter()
+        .find(|field| {
+            // The field name is stored as bytes ("print_job" as vector<u8>)
+            if let Some(name_bytes) = field.name.value.as_array() {
+                let bytes: Vec<u8> = name_bytes.iter()
+                    .filter_map(|v| v.as_u64().map(|n| n as u8))
+                    .collect();
+                bytes == b"print_job"
+            } else {
+                false
+            }
+        })
+        .ok_or_else(|| anyhow::anyhow!("No PrintJob found for this printer. Make sure to create a PrintJob first!"))?;
+
+    // Fetch the PrintJob object
+    let mut options = SuiObjectDataOptions::new();
+    options.show_content = true;
+    
+    let print_job_obj = sui_client
+        .read_api()
+        .get_object_with_options(print_job_field.object_id, options)
+        .await?;
+
+    let print_job_data = print_job_obj.data
+        .ok_or_else(|| anyhow::anyhow!("PrintJob data not found"))?;
+
+    let content = print_job_data.content
+        .ok_or_else(|| anyhow::anyhow!("PrintJob has no content"))?;
+
+    let fields = match content {
+        seal_sdk_rs::native_sui_sdk::sui_sdk::rpc_types::SuiParsedData::MoveObject(ref obj) => {
+            match &obj.fields {
+                seal_sdk_rs::native_sui_sdk::sui_sdk::rpc_types::SuiMoveStruct::WithFields(f) => f,
+                _ => return Err(anyhow::anyhow!("PrintJob fields are not in WithFields format")),
+            }
+        }
+        _ => return Err(anyhow::anyhow!("PrintJob is not a Move object")),
+    };
+
+    // Extract sculpt_id
+    let sculpt_id_str = match fields.get("sculpt_id") {
+        Some(SuiMoveValue::String(id)) => id,
+        _ => return Err(anyhow::anyhow!("sculpt_id field not found in PrintJob")),
+    };
+
+    SuiObjectID::from_hex_literal(sculpt_id_str)
+        .map_err(|e| anyhow::anyhow!("Failed to parse sculpt_id: {}", e))
 }
 
 /// Fetch sculpt information and printer version from chain
