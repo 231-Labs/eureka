@@ -39,8 +39,10 @@ use bcs;
 /// The sculpt_id will be automatically fetched from the PrintJob.
 
 struct DemoSetup {
-    seal_package_id: seal_sdk_rs::generic_types::ObjectID, // Archimeters - for Seal encryption
-    approve_package_id: seal_sdk_rs::generic_types::ObjectID, // Eureka - for seal_approve
+    // Eureka package ID used for BOTH:
+    // 1. Seal IBE namespace (encryption/decryption)
+    // 2. seal_approve function location
+    package_id: seal_sdk_rs::generic_types::ObjectID,
     #[allow(dead_code)]
     key_server_ids: Vec<seal_sdk_rs::generic_types::ObjectID>,
 }
@@ -66,9 +68,9 @@ async fn main() -> Result<()> {
     println!();
 
     // Configuration - Updated package IDs
-    // NOTE: For Seal encryption/decryption, use Archimeters package (where Sculpt is defined)
-    let archimeters_package_id_str = "0xc1814c4cbd4c23f306e886c7f8aace3ce1635d0a6e896b3bf35835139945d693";
-    // Eureka package is where seal_approve is located
+    // IMPORTANT: Use EUREKA package ID for BOTH encryption and decryption
+    // Seal uses IBE (Identity-Based Encryption) where packageId is the namespace
+    // Since seal_approve is in Eureka package, we use Eureka as the namespace
     let eureka_package_id_str = "0x4e43c7642828f9d8c410a47d7ed80b3df7711e49662c4704549dc05b23076bec";
     
     // Key Servers (matching frontend config)
@@ -79,9 +81,8 @@ async fn main() -> Result<()> {
     ];
 
     // Parse IDs
-    // IMPORTANT: Seal SDK needs the ARCHIMETERS package ID for decryption
-    // because Sculpt objects are encrypted in the Archimeters package
-    let seal_package_id: SealObjectID = archimeters_package_id_str.parse()?;
+    // IMPORTANT: Seal SDK uses Eureka package ID as the IBE namespace
+    // Both encryption (frontend) and decryption (here) must use the same namespace
     let eureka_package_id: SealObjectID = eureka_package_id_str.parse()?;
     let printer_id: SuiObjectID = SuiObjectID::from_hex_literal(printer_id_str)?;
     let printer_cap_id: SuiObjectID = SuiObjectID::from_hex_literal(printer_cap_id_str)?;
@@ -91,8 +92,7 @@ async fn main() -> Result<()> {
         .collect::<Result<Vec<_>, _>>()?;
 
     let setup = DemoSetup {
-        seal_package_id,
-        approve_package_id: eureka_package_id,
+        package_id: eureka_package_id,
         key_server_ids,
     };
 
@@ -341,9 +341,9 @@ async fn decrypt_sculpt(
     println!("   Address: {}", current_address);
     println!("   Note: This must match the printer owner!");
     
-    // SessionKey uses the SEAL package ID (Archimeters) for encryption/decryption
+    // SessionKey uses Eureka package ID as the IBE namespace
     let session_key = SessionKey::new(
-        setup.seal_package_id,
+        setup.package_id,
         10,
         &mut wallet,
     )
@@ -395,7 +395,7 @@ async fn decrypt_sculpt(
     // Call seal_approve in eureka module (no type arguments!)
     // entry fun seal_approve(_id, printer, printer_cap, ctx)
     builder.programmable_move_call(
-        setup.approve_package_id.into(),
+        setup.package_id.into(),
         Identifier::from_str("eureka")?,
         Identifier::from_str("seal_approve")?,
         vec![], // No type arguments needed!
@@ -410,7 +410,7 @@ async fn decrypt_sculpt(
 
     // Debug: Print transaction details
     println!("\n📋 Transaction Details:");
-    println!("   Package: {}", setup.approve_package_id);
+    println!("   Package: {} (Eureka - IBE namespace)", setup.package_id);
     println!("   Module: eureka");
     println!("   Function: seal_approve");
     println!("   Arguments: 3 (_id, printer, printer_cap)");
