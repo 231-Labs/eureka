@@ -35,20 +35,12 @@ async fn main() -> Result<()> {
     // Get sculpt_id and printer_id from command line arguments
     let args: Vec<String> = std::env::args().collect();
     
-    if args.len() < 3 {
-        return Err(anyhow::anyhow!(
-            "Usage: cargo run --example test_new_contract -- <sculpt_id> <printer_id>"
-        ));
-    }
-    
     let sculpt_id_str = &args[1];
-    let printer_id_str = &args[2];
     
     println!("🔐 Decrypting Sculpt: {}", sculpt_id_str);
-    println!("🖨️  Printer ID: {}", printer_id_str);
 
     // Configuration - New Archimeters package with printer_id parameter
-    let package_id_str = "0x9a4790f287d6571f1b984577a4a4bb8bfc656b7126c01aa8a8a8881dca073ba7";
+    let package_id_str = "0x6c65527b56340a2adff6b2b7ced4a5a5ca798986fe40ec76b8e267da2b02551a";
     
     // Key Servers (matching frontend config - all 3 servers with threshold=1)
     let key_server_strs = vec![
@@ -60,7 +52,6 @@ async fn main() -> Result<()> {
     // Parse IDs
     let approve_package_id: SealObjectID = package_id_str.parse()?;
     let sculpt_id: ObjectID = sculpt_id_str.parse()?;
-    let printer_id: ObjectID = printer_id_str.parse()?;
     let key_server_ids: Vec<SealObjectID> = key_server_strs
         .iter()
         .map(|s| s.parse())
@@ -91,7 +82,7 @@ async fn main() -> Result<()> {
 
     // Decrypt using Seal SDK
     println!("🔓 Decrypting...");
-    decrypt_sculpt(&setup, &seal_id, sculpt_id, printer_id, encrypted_object).await?;
+    decrypt_sculpt(&setup, &seal_id, encrypted_object).await?;
 
     println!("✅ Decryption completed successfully!");
     Ok(())
@@ -184,8 +175,6 @@ fn extract_option_string_field(
 async fn decrypt_sculpt(
     setup: &DemoSetup,
     seal_id: &str,
-    _sculpt_id: ObjectID,
-    printer_id: ObjectID,
     encrypted: seal_sdk_rs::crypto::EncryptedObject,
 ) -> Result<()> {
     // Connect to Sui testnet
@@ -233,8 +222,8 @@ async fn decrypt_sculpt(
     let id_arg = builder.pure(id_bytes)?;
     
     // printer_id as ID (address) - convert ObjectID to bytes directly, not BCS serialized
-    let printer_id_bytes = printer_id.into_bytes();
-    let printer_id_arg = builder.pure(printer_id_bytes.to_vec())?;
+    //let printer_id_bytes = printer_id.into_bytes();
+    // let printer_id_arg = builder.pure(printer_id_bytes.to_vec())?;
 
     // Call seal_approve function in the sculpt module
     // Parameters: _id: vector<u8>, _printer_id: ID
@@ -243,7 +232,7 @@ async fn decrypt_sculpt(
         Identifier::from_str("sculpt")?,
         Identifier::from_str("seal_approve")?,
         vec![],  // No type arguments needed
-        vec![id_arg, printer_id_arg],
+        vec![id_arg],
     );
 
     let approve_ptb: ProgrammableTransaction = builder.finish();

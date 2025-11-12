@@ -14,13 +14,14 @@ module eureka::print_job {
         id: UID,
         sculpt_alias: String,
         sculpt_id: ID,
-        sculpt_structure: String,
+        sculpt_structure: option::Option<String>,
+        seal_resource_id: option::Option<String>,
         customer: address,
         printer_id: ID,
         is_completed: bool,
         paid_amount: Balance<SUI>,
-        start_time: Option<u64>,
-        end_time: Option<u64>,
+        start_time: option::Option<u64>,
+        end_time: option::Option<u64>,
     }    
 
     /// === Mutator Functions ===
@@ -30,7 +31,8 @@ module eureka::print_job {
         customer: address,
         sculpt_alias: String,
         sculpt_id: ID,
-        sculpt_structure: String,
+        sculpt_structure: option::Option<String>,
+        seal_resource_id: option::Option<String>,
         paid_amount: Balance<SUI>,
         printer_id: ID,
         ctx: &mut TxContext,
@@ -40,6 +42,7 @@ module eureka::print_job {
             sculpt_alias,
             sculpt_id,
             sculpt_structure,
+            seal_resource_id,
             customer,
             printer_id,
             is_completed: false,
@@ -106,5 +109,21 @@ module eureka::print_job {
 
     public(package) fun get_print_job_customer(print_job: &PrintJob): address {
         print_job.customer
+    }
+
+    public(package) fun get_print_job_sculpt_id(print_job: &PrintJob): ID {
+        print_job.sculpt_id
+    }
+
+    public(package) fun get_print_job_printer_id(print_job: &PrintJob): ID {
+        print_job.printer_id
+    }
+
+    public(package) fun get_print_job_seal_resource_id(print_job: &PrintJob): &option::Option<String> {
+        &print_job.seal_resource_id
+    }
+
+    public(package) fun get_print_job_structure(print_job: &PrintJob): &option::Option<String> {
+        &print_job.sculpt_structure
     }
 } 

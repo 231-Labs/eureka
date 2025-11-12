@@ -271,7 +271,7 @@ impl TransactionBuilder {
         self.executor.execute_move_call(
             package_id,
             "eureka",
-            "register_printer",
+            "register_printer_and_transfer",
             vec![],
             vec![registry_arg, name_arg],
             None,

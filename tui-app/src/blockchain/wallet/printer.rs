@@ -58,21 +58,12 @@ impl Wallet {
         options.show_owner = true;
         options.show_type = true;
         
-        // Get current network's package ID and construct the filter
-        let current_package_id = self.network_state.get_current_package_ids().eureka_package_id;
-        let printer_cap_type = format!("{}::eureka::PrinterCap", current_package_id);
-        
-        // Create a filter for the specific PrinterCap type
-        let filter = sui_sdk::rpc_types::SuiObjectDataFilter::StructType(
-            sui_sdk::types::parse_sui_struct_tag(&printer_cap_type)?
-        );
-        
-        // Query with type filter - this returns only PrinterCap objects from current package
+        // Query ALL objects owned by the user (no filter for better reliability)
         let response = self.client.read_api()
             .get_owned_objects(
                 address,
                 Some(SuiObjectResponseQuery::new(
-                    Some(filter),
+                    None, // No filter - get all objects
                     Some(options)
                 )),
                 None,
@@ -80,17 +71,21 @@ impl Wallet {
             )
             .await?;
         
-        // Extract info from the first PrinterCap found
+        // Find PrinterCap object and extract info
         let cap_info = response.data.iter()
             .filter_map(|obj| {
                 obj.data.as_ref()
                     .and_then(|data| data.content.as_ref())
                     .and_then(|content| {
                         if let SuiParsedData::MoveObject(move_obj) = content {
-                            if let SuiMoveStruct::WithFields(fields) = &move_obj.fields {
-                                let cap_id = extract_id_from_fields(fields)?;
-                                let printer_id = extract_printer_id_from_cap(fields)?;
-                                return Some((cap_id, printer_id));
+                            let obj_type = move_obj.type_.to_string();
+                            // Check if this is a PrinterCap
+                            if obj_type.contains("::eureka::PrinterCap") {
+                                if let SuiMoveStruct::WithFields(fields) = &move_obj.fields {
+                                    let cap_id = extract_id_from_fields(fields)?;
+                                    let printer_id = extract_printer_id_from_cap(fields)?;
+                                    return Some((cap_id, printer_id));
+                                }
                             }
                         }
                         None

@@ -265,6 +265,11 @@ pub fn render_offline_printer(f: &mut Frame, app: &mut App, area: Rect, time: u6
                 Span::styled("P", Style::default().fg(highlight_color)),
                 Span::styled(" to print", Style::default().fg(dim_color)),
             ]).alignment(Alignment::Center),
+            Line::from(vec![
+                Span::styled("Press ", Style::default().fg(dim_color)),
+                Span::styled("T", Style::default().fg(Color::Yellow)),
+                Span::styled(" for decryption test", Style::default().fg(dim_color)),
+            ]).alignment(Alignment::Center),
             // Add some empty lines for better centering
             Line::from("").alignment(Alignment::Center),
             Line::from("").alignment(Alignment::Center),

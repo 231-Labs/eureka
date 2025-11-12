@@ -84,9 +84,7 @@ impl App {
 
     pub fn confirm_harvest(&mut self) {
         self.is_harvesting = false;
-        // TODO: actually execute harvest logic
         self.success_message = Some("Harvest completed successfully!".to_string());
-        // reset reward balance
         self.harvestable_rewards = "0.00 SUI".to_string();
     }
 
@@ -100,6 +98,15 @@ impl App {
             .unwrap_or_default()
             .as_secs();
         let frame = (time % 3) as usize;
+
+        // Show loading status if Sculpts are being loaded
+        if self.is_loading_sculpts {
+            return match frame {
+                0 => "║▓▒░ LOADING SCULPTS ░▒▓║".to_string(),
+                1 => "║▒▓░ LOADING SCULPTS ░▓▒║".to_string(),
+                _ => "║░▓▒ LOADING SCULPTS ▒▓░║".to_string(),
+            };
+        }
 
         // only show one state: prioritize print_status
         match &self.print_status {

@@ -1,0 +1,421 @@
+use anyhow::Result;
+use seal_sdk_rs::native_sui_sdk::client::seal_client::SealClient;
+use seal_sdk_rs::session_key::SessionKey;
+use seal_sdk_rs::native_sui_sdk::sui_sdk::SuiClientBuilder;
+use seal_sdk_rs::native_sui_sdk::sui_sdk::wallet_context::WalletContext;
+use seal_sdk_rs::native_sui_sdk::sui_types::Identifier;
+use seal_sdk_rs::native_sui_sdk::sui_types::programmable_transaction_builder::ProgrammableTransactionBuilder;
+use seal_sdk_rs::native_sui_sdk::sui_types::transaction::{ProgrammableTransaction, ObjectArg};
+use seal_sdk_rs::native_sui_sdk::sui_sdk::rpc_types::{SuiObjectDataOptions, SuiMoveValue};
+use seal_sdk_rs::generic_types::ObjectID as SealObjectID;
+use seal_sdk_rs::native_sui_sdk::sui_types::base_types::ObjectID as SuiObjectID;
+use seal_sdk_rs::native_sui_sdk::sui_types::object::Owner;
+use std::str::FromStr;
+use std::path::Path;
+use std::collections::BTreeMap;
+use bcs;
+
+/// Test seal_approve with kiosk-stored sculpts (new implementation)
+/// 
+/// This test uses the new seal_approve signature that requires:
+/// - sculpt_id (from kiosk)
+/// - kiosk reference
+/// - kiosk_cap reference
+/// - printer reference
+/// - printer_cap reference
+/// 
+/// Usage: cargo run --example test_seal_approve_kiosk -- <sculpt_id> <kiosk_id> <kiosk_cap_id> <printer_id> <printer_cap_id>
+/// 
+/// Example: 
+/// cargo run --example test_seal_approve_kiosk -- \
+///   0x123...sculpt \
+///   0x456...kiosk \
+///   0x789...kiosk_cap \
+///   0xabc...printer \
+///   0xdef...printer_cap
+
+struct DemoSetup {
+    approve_package_id: seal_sdk_rs::generic_types::ObjectID,
+    #[allow(dead_code)]
+    key_server_ids: Vec<seal_sdk_rs::generic_types::ObjectID>,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Get arguments from command line
+    let args: Vec<String> = std::env::args().collect();
+    
+    if args.len() < 6 {
+        eprintln!("Usage: {} <sculpt_id> <kiosk_id> <kiosk_cap_id> <printer_id> <printer_cap_id>", args[0]);
+        std::process::exit(1);
+    }
+    
+    let sculpt_id_str = &args[1];
+    let kiosk_id_str = &args[2];
+    let kiosk_cap_id_str = &args[3];
+    let printer_id_str = &args[4];
+    let printer_cap_id_str = &args[5];
+    
+    println!("🔐 Testing Seal Approve with Kiosk");
+    println!("   Sculpt: {}", sculpt_id_str);
+    println!("   Kiosk: {}", kiosk_id_str);
+    println!("   Printer: {}", printer_id_str);
+
+    // Configuration - NEW DEPLOYED CONTRACTS
+    let eureka_package_id_str = "0xfb55264b3a01ffe8af47952fdb8900d79d2ddd41743cb286959f7f2583a57425";
+    
+    // Key Servers (matching frontend config)
+    let key_server_strs = vec![
+        "0x73d05d62c18d9374e3ea529e8e0ed6161da1a141a94d3f76ae3fe4e99356db75", // Mysten Labs 1
+        "0xf5d14a81a982144ae441cd7d64b09027f116a468bd36e7eca494f750591623c8", // Mysten Labs 2
+        "0x4cded1abeb52a22b6becb42a91d3686a4c901cf52eee16234214d0b5b2da4c46", // Triton One
+    ];
+
+    // Parse IDs
+    let approve_package_id: SealObjectID = eureka_package_id_str.parse()?;
+    let sculpt_id: SuiObjectID = SuiObjectID::from_hex_literal(sculpt_id_str)?;
+    let kiosk_id: SuiObjectID = SuiObjectID::from_hex_literal(kiosk_id_str)?;
+    let kiosk_cap_id: SuiObjectID = SuiObjectID::from_hex_literal(kiosk_cap_id_str)?;
+    let printer_id: SuiObjectID = SuiObjectID::from_hex_literal(printer_id_str)?;
+    let printer_cap_id: SuiObjectID = SuiObjectID::from_hex_literal(printer_cap_id_str)?;
+    let key_server_ids: Vec<SealObjectID> = key_server_strs
+        .iter()
+        .map(|s| s.parse())
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let setup = DemoSetup {
+        approve_package_id,
+        key_server_ids,
+    };
+
+    // Connect to Sui testnet and fetch sculpt information
+    let sui_client = SuiClientBuilder::default()
+        .build("https://fullnode.testnet.sui.io:443")
+        .await?;
+    
+    let (encrypted_blob_id, seal_resource_id, kiosk_version, printer_version) = 
+        fetch_sculpt_and_objects(&sui_client, sculpt_id, kiosk_id, printer_id).await?;
+
+    // Check if sculpt is encrypted
+    let seal_id = match seal_resource_id {
+        Some(id) => id,
+        None => return Err(anyhow::anyhow!("Sculpt is not encrypted")),
+    };
+
+    // Download and parse encrypted data
+    println!("📥 Downloading from Walrus...");
+    let encrypted_data = download_encrypted_data(&encrypted_blob_id).await?;
+    let encrypted_object = parse_encrypted_object(&encrypted_data)?;
+
+    // Decrypt using Seal SDK
+    println!("🔓 Decrypting with new seal_approve (kiosk version)...");
+    decrypt_sculpt(
+        &setup, 
+        &seal_id, 
+        encrypted_object,
+        sculpt_id,
+        kiosk_id,
+        kiosk_cap_id,
+        kiosk_version,
+        printer_id,
+        printer_cap_id,
+        printer_version,
+    ).await?;
+
+    println!("✅ Decryption completed successfully!");
+    Ok(())
+}
+
+/// Download encrypted data from Walrus
+async fn download_encrypted_data(blob_id: &str) -> Result<Vec<u8>> {
+    let url = format!("https://aggregator.walrus-testnet.walrus.space/v1/blobs/{}", blob_id);
+    let response = reqwest::get(&url).await?;
+    
+    if !response.status().is_success() {
+        return Err(anyhow::anyhow!("Failed to download: HTTP {}", response.status()));
+    }
+
+    Ok(response.bytes().await?.to_vec())
+}
+
+/// Parse encrypted data as EncryptedObject
+fn parse_encrypted_object(data: &[u8]) -> Result<seal_sdk_rs::crypto::EncryptedObject> {
+    let encrypted: seal_sdk_rs::crypto::EncryptedObject = bcs::from_bytes(data)
+        .map_err(|e| anyhow::anyhow!("BCS deserialization failed: {}", e))?;
+    Ok(encrypted)
+}
+
+/// Fetch sculpt information and object versions from chain
+async fn fetch_sculpt_and_objects(
+    sui_client: &seal_sdk_rs::native_sui_sdk::sui_sdk::SuiClient,
+    sculpt_id: SuiObjectID,
+    kiosk_id: SuiObjectID,
+    printer_id: SuiObjectID,
+) -> Result<(String, Option<String>, u64, u64)> {
+    let mut options = SuiObjectDataOptions::new();
+    options.show_content = true;
+    options.show_type = true;
+    options.show_owner = true;
+
+    // Fetch sculpt to get encrypted blob ID and seal_resource_id
+    let object_response = sui_client
+        .read_api()
+        .get_object_with_options(sculpt_id, options.clone())
+        .await?;
+
+    let object_data = object_response.data
+        .ok_or_else(|| anyhow::anyhow!("Sculpt object not found"))?;
+
+    let content = object_data.content
+        .ok_or_else(|| anyhow::anyhow!("Sculpt object has no content"))?;
+
+    let fields = match content {
+        seal_sdk_rs::native_sui_sdk::sui_sdk::rpc_types::SuiParsedData::MoveObject(ref obj) => {
+            match &obj.fields {
+                seal_sdk_rs::native_sui_sdk::sui_sdk::rpc_types::SuiMoveStruct::WithFields(f) => f,
+                _ => return Err(anyhow::anyhow!("Sculpt fields are not in WithFields format")),
+            }
+        }
+        _ => return Err(anyhow::anyhow!("Sculpt is not a Move object")),
+    };
+
+    // Extract structure (encrypted STL blob ID)
+    let structure = extract_option_string_field(fields, "structure")
+        .ok_or_else(|| anyhow::anyhow!("Sculpt has no structure field (STL blob ID)"))?;
+
+    // Extract seal_resource_id
+    let seal_resource_id = extract_option_string_field(fields, "seal_resource_id");
+
+    // Fetch kiosk to get its shared version
+    let kiosk_response = sui_client
+        .read_api()
+        .get_object_with_options(kiosk_id, options.clone())
+        .await?;
+    let kiosk_data = kiosk_response.data
+        .ok_or_else(|| anyhow::anyhow!("Kiosk not found"))?;
+    let kiosk_version = match kiosk_data.owner {
+        Some(Owner::Shared { initial_shared_version }) => initial_shared_version.value(),
+        _ => return Err(anyhow::anyhow!("Kiosk is not a shared object")),
+    };
+
+    // Fetch printer to get its shared version
+    let printer_response = sui_client
+        .read_api()
+        .get_object_with_options(printer_id, options)
+        .await?;
+    let printer_data = printer_response.data
+        .ok_or_else(|| anyhow::anyhow!("Printer not found"))?;
+    let printer_version = match printer_data.owner {
+        Some(Owner::Shared { initial_shared_version }) => initial_shared_version.value(),
+        _ => return Err(anyhow::anyhow!("Printer is not a shared object")),
+    };
+
+    Ok((structure, seal_resource_id, kiosk_version, printer_version))
+}
+
+/// Extract Option<String> field from Move struct fields
+fn extract_option_string_field(
+    fields: &BTreeMap<String, SuiMoveValue>,
+    field_name: &str,
+) -> Option<String> {
+    match fields.get(field_name)? {
+        SuiMoveValue::String(value) if !value.is_empty() => Some(value.clone()),
+        SuiMoveValue::Option(opt) => {
+            match opt.as_ref() {
+                Some(SuiMoveValue::String(value)) if !value.is_empty() => Some(value.clone()),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Decrypt sculpt using Seal SDK with new seal_approve signature
+async fn decrypt_sculpt(
+    setup: &DemoSetup,
+    seal_id: &str,
+    encrypted: seal_sdk_rs::crypto::EncryptedObject,
+    sculpt_id: SuiObjectID,
+    kiosk_id: SuiObjectID,
+    kiosk_cap_id: SuiObjectID,
+    kiosk_version: u64,
+    printer_id: SuiObjectID,
+    printer_cap_id: SuiObjectID,
+    printer_version: u64,
+) -> Result<()> {
+    // Connect to Sui testnet
+    let sui_client = SuiClientBuilder::default()
+        .build("https://fullnode.testnet.sui.io:443")
+        .await?;
+
+    let client = SealClient::new(sui_client.clone());
+
+    // Load wallet
+    let wallet_path = std::env::var("HOME")
+        .map_err(|_| anyhow::anyhow!("Cannot find HOME env var"))?
+        + "/.sui/sui_config/client.yaml";
+
+    let mut wallet = WalletContext::new(Path::new(&wallet_path))?;
+    
+    // Print current wallet address for debugging
+    let current_address = wallet.active_address()?;
+    println!("\n👛 Current Wallet:");
+    println!("   Address: {}", current_address);
+    println!("   Note: This must match the printer owner!");
+    
+    let session_key = SessionKey::new(
+        setup.approve_package_id,
+        10,
+        &mut wallet,
+    )
+    .await?;
+
+    // Build approval transaction for new seal_approve signature
+    println!("\n🔨 Building approval transaction...");
+    let mut builder = ProgrammableTransactionBuilder::new();
+
+    // Extract resource_id from seal_id
+    let resource_id = if seal_id.contains(':') {
+        seal_id.split(':').nth(1)
+            .ok_or_else(|| anyhow::anyhow!("Invalid seal_resource_id format"))?
+    } else {
+        seal_id
+    };
+    
+    let id_hex = resource_id.strip_prefix("0x").unwrap_or(resource_id);
+    let id_bytes = hex::decode(id_hex)
+        .map_err(|e| anyhow::anyhow!("Failed to decode hex ID: {}", e))?;
+    
+    println!("   ✅ Arg 0 (_id): {} bytes", id_bytes.len());
+    
+    // Argument 0: _id (vector<u8>)
+    let id_arg = builder.pure(id_bytes)?;
+    
+    // Argument 1: sculpt_id (ID)
+    let sculpt_id_bytes = sculpt_id.into_bytes();
+    let sculpt_id_arg = builder.pure(sculpt_id_bytes.to_vec())?;
+    println!("   ✅ Arg 1 (sculpt_id): {}", sculpt_id);
+    
+    // Argument 2: kiosk (shared object)
+    let kiosk_arg = builder.obj(ObjectArg::SharedObject {
+        id: kiosk_id,
+        initial_shared_version: kiosk_version.into(),
+        mutable: false,
+    })?;
+    println!("   ✅ Arg 2 (kiosk): {} (shared, v{})", kiosk_id, kiosk_version);
+    
+    // Argument 3: kiosk_cap (owned object) - need to fetch version and digest
+    let kiosk_cap_obj = sui_client
+        .read_api()
+        .get_object_with_options(kiosk_cap_id, SuiObjectDataOptions::bcs_lossless())
+        .await?
+        .data
+        .ok_or_else(|| anyhow::anyhow!("KioskOwnerCap not found"))?;
+    let kiosk_cap_arg = builder.obj(ObjectArg::ImmOrOwnedObject((
+        kiosk_cap_id,
+        kiosk_cap_obj.version,
+        kiosk_cap_obj.digest,
+    )))?;
+    println!("   ✅ Arg 3 (kiosk_cap): {} (owned, v{})", kiosk_cap_id, kiosk_cap_obj.version);
+    
+    // Argument 4: printer (shared object)
+    let printer_arg = builder.obj(ObjectArg::SharedObject {
+        id: printer_id,
+        initial_shared_version: printer_version.into(),
+        mutable: false,
+    })?;
+    println!("   ✅ Arg 4 (printer): {} (shared, v{})", printer_id, printer_version);
+    
+    // Argument 5: printer_cap (owned object) - need to fetch version and digest
+    let printer_cap_obj = sui_client
+        .read_api()
+        .get_object_with_options(printer_cap_id, SuiObjectDataOptions::bcs_lossless())
+        .await?
+        .data
+        .ok_or_else(|| anyhow::anyhow!("PrinterCap not found"))?;
+    let printer_cap_arg = builder.obj(ObjectArg::ImmOrOwnedObject((
+        printer_cap_id,
+        printer_cap_obj.version,
+        printer_cap_obj.digest,
+    )))?;
+    println!("   ✅ Arg 5 (printer_cap): {} (owned, v{})", printer_cap_id, printer_cap_obj.version);
+
+    // Call seal_approve in eureka module with type parameter <ATELIER>
+    // entry fun seal_approve<T>(_id, sculpt_id, kiosk, kiosk_cap, printer, printer_cap, ctx)
+    builder.programmable_move_call(
+        setup.approve_package_id.into(),
+        Identifier::from_str("eureka")?,
+        Identifier::from_str("seal_approve")?,
+        vec![
+            // Type argument: archimeters::atelier::ATELIER
+            seal_sdk_rs::native_sui_sdk::sui_types::TypeTag::from_str(
+                // Sculpt Type
+                "0x927efc566998883385df85bf7ff45da1c9b1c897fc5be48f3d81df1d2f3774b1::atelier::ATELIER"
+            )?
+        ],
+        vec![
+            id_arg,          // _id: vector<u8>
+            sculpt_id_arg,   // sculpt_id: ID
+            kiosk_arg,       // kiosk: &Kiosk
+            kiosk_cap_arg,   // kiosk_cap: &KioskOwnerCap
+            printer_arg,     // printer: &Printer
+            printer_cap_arg, // printer_cap: &PrinterCap
+        ],
+    );
+
+    let approve_ptb: ProgrammableTransaction = builder.finish();
+
+    // Debug: Print transaction details
+    println!("\n📋 Transaction Details:");
+    println!("   Package: {}", setup.approve_package_id);
+    println!("   Module: eureka");
+    println!("   Function: seal_approve<ATELIER>");
+    println!("   Arguments: 6 (id, sculpt_id, kiosk, kiosk_cap, printer, printer_cap)");
+    println!();
+
+    // Decrypt with detailed error handling
+    println!("🔑 Requesting decryption from Seal SDK...");
+    let plaintext = match client
+        .decrypt_object_bytes(
+            &bcs::to_bytes(&encrypted)?,
+            approve_ptb,
+            &session_key,
+        )
+        .await
+    {
+        Ok(data) => {
+            println!("   ✅ Seal SDK decryption successful!");
+            data
+        },
+        Err(e) => {
+            eprintln!("\n❌ Seal SDK Error:");
+            eprintln!("   {}", e);
+            eprintln!("\n🔍 Possible causes:");
+            eprintln!("   1. ENotPrinterOwner (code 5): Caller is not the printer owner");
+            eprintln!("   2. EPrinterNotInWhitelist (code 6): Printer not in sculpt whitelist");
+            eprintln!("   3. Object not found: Invalid object IDs");
+            eprintln!("   4. Permission denied: Wrong KioskOwnerCap or PrinterCap");
+            eprintln!("\n💡 Debug tips:");
+            eprintln!("   - Check printer owner: sui client object {}", printer_cap_id);
+            eprintln!("   - Check whitelist: sui client object {}", sculpt_id);
+            eprintln!("   - Verify active wallet: sui client active-address");
+            return Err(e.into());
+        }
+    };
+
+    // Save and verify decrypted STL
+    let output_file = "decrypted_sculpt_kiosk.stl";
+    std::fs::write(output_file, &plaintext)?;
+    
+    let format = if plaintext.starts_with(b"solid") {
+        "ASCII STL"
+    } else if plaintext.len() > 84 {
+        "Binary STL"
+    } else {
+        "Unknown"
+    };
+    
+    println!("💾 Saved: {} ({}, {} bytes)", output_file, format, plaintext.len());
+    Ok(())
+}
+

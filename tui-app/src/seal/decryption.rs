@@ -14,6 +14,7 @@ use std::path::PathBuf;
 pub struct SealDecryptor {
     seal_client: SealClient,
     wallet_path: PathBuf,
+    #[allow(dead_code)]
     rpc_url: String,
 }
 
@@ -95,6 +96,7 @@ impl SealDecryptor {
     }
 
     /// download and decrypt STL file from Walrus
+    #[allow(dead_code)]
     pub async fn download_and_decrypt(
         &self,
         blob_id: &str,
@@ -115,6 +117,7 @@ impl SealDecryptor {
     }
 
     /// download file from Walrus
+    #[allow(dead_code)]
     async fn download_from_walrus(&self, blob_id: &str) -> Result<Vec<u8>> {
         let url = format!(
             "https://aggregator.walrus-testnet.walrus.space/v1/{}",

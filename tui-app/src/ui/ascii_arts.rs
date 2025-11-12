@@ -26,7 +26,6 @@ pub const EUREKA_FRAMES: [&str; 3] = [
 "#,
 ];
 
-/// 打印機待機狀態動畫幀
 pub const PRINTER_IDLE_FRAMES: [&str; 4] = [
     r#"
 
@@ -50,7 +49,6 @@ pub const PRINTER_IDLE_FRAMES: [&str; 4] = [
 ◥▅▅▅▅▅▅▅◤"#
 ];
 
-/// 打印機活動狀態動畫幀
 pub const PRINTER_ACTIVE_FRAMES: [&str; 4] = [
     r#"
 
@@ -78,14 +76,10 @@ pub const PRINTER_ACTIVE_FRAMES: [&str; 4] = [
 ▄▀▄▀▄▀▄"#
 ];
 
-/// UI Constants
 pub struct UiConstants;
 
 impl UiConstants {
-    /// Network progress bar
     pub const NETWORK_PROGRESS: &'static str = "[■■■■■□□□□□]";
-    /// Wallet progress bar
     pub const WALLET_PROGRESS: &'static str = "[■■■■■■■□□□]";
-    /// Build on Sui slogan
     pub const BUILD_ON_SUI: &'static str = "Build on Sui";
 } 

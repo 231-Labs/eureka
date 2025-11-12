@@ -9378,6 +9378,7 @@ dependencies = [
  "crossterm",
  "dirs 6.0.0",
  "futures",
+ "hex",
  "ratatui",
  "reqwest 0.11.27",
  "seal-sdk-rs",

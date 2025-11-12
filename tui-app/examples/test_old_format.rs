@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
     println!("🔐 Decrypting Sculpt (OLD FORMAT): {}", sculpt_id_str);
 
     // Configuration - New Archimeters package with printer_id parameter
-    let package_id_str = "0x9a4790f287d6571f1b984577a4a4bb8bfc656b7126c01aa8a8a8881dca073ba7";
+    let package_id_str = "0x73d08645087a5a7c01a619cb32df1ee06f904cbc268976e3eae0885bbf742150";
     
     // Key Servers (matching frontend config - all 3 servers with threshold=1)
     let key_server_strs = vec![

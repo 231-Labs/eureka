@@ -10,6 +10,7 @@ pub struct SealResourceMetadata {
 }
 
 impl SealResourceMetadata {
+    #[allow(dead_code)]
     pub fn new(package_id: String, resource_id: String) -> Self {
         Self {
             package_id,
@@ -34,6 +35,7 @@ impl SealResourceMetadata {
 }
 
 /// Sculpt 擴展，包含 Seal 加密信息
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct SculptWithSeal {
     pub alias: String,
