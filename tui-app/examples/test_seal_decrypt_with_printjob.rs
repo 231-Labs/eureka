@@ -15,24 +15,28 @@ use std::path::Path;
 use std::collections::BTreeMap;
 use bcs;
 
-/// Test seal_approve with kiosk-stored sculpts (new implementation)
+/// E2E test of Seal SDK decryption with PrintJob-based authorization
 /// 
-/// This test uses the new seal_approve signature that requires:
-/// - sculpt_id (from kiosk)
-/// - kiosk reference
-/// - kiosk_cap reference
-/// - printer reference
-/// - printer_cap reference
+/// This test demonstrates the complete decryption flow:
+/// 1. Fetch encrypted sculpt data from chain
+/// 2. Download encrypted STL from Walrus
+/// 3. Build seal_approve transaction with PrintJob authorization
+/// 4. Decrypt using Seal SDK
 /// 
-/// Usage: cargo run --example test_seal_approve_kiosk -- <sculpt_id> <kiosk_id> <kiosk_cap_id> <printer_id> <printer_cap_id>
+/// New simplified seal_approve signature:
+/// - _id: seal resource ID
+/// - printer: shared object reference
+/// - printer_cap: owned object reference
+/// 
+/// Usage: cargo run --example test_seal_decrypt_with_printjob -- <sculpt_id> <printer_id> <printer_cap_id>
 /// 
 /// Example: 
-/// cargo run --example test_seal_approve_kiosk -- \
+/// cargo run --example test_seal_decrypt_with_printjob -- \
 ///   0x123...sculpt \
-///   0x456...kiosk \
-///   0x789...kiosk_cap \
 ///   0xabc...printer \
 ///   0xdef...printer_cap
+/// 
+/// Note: A PrintJob must exist for the printer before running this test!
 
 struct DemoSetup {
     approve_package_id: seal_sdk_rs::generic_types::ObjectID,
@@ -45,24 +49,24 @@ async fn main() -> Result<()> {
     // Get arguments from command line
     let args: Vec<String> = std::env::args().collect();
     
-    if args.len() < 6 {
-        eprintln!("Usage: {} <sculpt_id> <kiosk_id> <kiosk_cap_id> <printer_id> <printer_cap_id>", args[0]);
+    if args.len() < 4 {
+        eprintln!("Usage: {} <sculpt_id> <printer_id> <printer_cap_id>", args[0]);
+        eprintln!("\nNote: Make sure a PrintJob exists for this printer!");
         std::process::exit(1);
     }
     
     let sculpt_id_str = &args[1];
-    let kiosk_id_str = &args[2];
-    let kiosk_cap_id_str = &args[3];
-    let printer_id_str = &args[4];
-    let printer_cap_id_str = &args[5];
+    let printer_id_str = &args[2];
+    let printer_cap_id_str = &args[3];
     
-    println!("🔐 Testing Seal Approve with Kiosk");
+    println!("🔐 E2E Seal Decryption Test (PrintJob-based Auth)");
+    println!("==================================================");
     println!("   Sculpt: {}", sculpt_id_str);
-    println!("   Kiosk: {}", kiosk_id_str);
     println!("   Printer: {}", printer_id_str);
+    println!();
 
-    // Configuration - NEW DEPLOYED CONTRACTS
-    let eureka_package_id_str = "0xfb55264b3a01ffe8af47952fdb8900d79d2ddd41743cb286959f7f2583a57425";
+    // Configuration - Updated package IDs
+    let eureka_package_id_str = "0x4e43c7642828f9d8c410a47d7ed80b3df7711e49662c4704549dc05b23076bec";
     
     // Key Servers (matching frontend config)
     let key_server_strs = vec![
@@ -74,8 +78,6 @@ async fn main() -> Result<()> {
     // Parse IDs
     let approve_package_id: SealObjectID = eureka_package_id_str.parse()?;
     let sculpt_id: SuiObjectID = SuiObjectID::from_hex_literal(sculpt_id_str)?;
-    let kiosk_id: SuiObjectID = SuiObjectID::from_hex_literal(kiosk_id_str)?;
-    let kiosk_cap_id: SuiObjectID = SuiObjectID::from_hex_literal(kiosk_cap_id_str)?;
     let printer_id: SuiObjectID = SuiObjectID::from_hex_literal(printer_id_str)?;
     let printer_cap_id: SuiObjectID = SuiObjectID::from_hex_literal(printer_cap_id_str)?;
     let key_server_ids: Vec<SealObjectID> = key_server_strs
@@ -93,8 +95,8 @@ async fn main() -> Result<()> {
         .build("https://fullnode.testnet.sui.io:443")
         .await?;
     
-    let (encrypted_blob_id, seal_resource_id, kiosk_version, printer_version) = 
-        fetch_sculpt_and_objects(&sui_client, sculpt_id, kiosk_id, printer_id).await?;
+    let (encrypted_blob_id, seal_resource_id, printer_version) = 
+        fetch_sculpt_and_objects(&sui_client, sculpt_id, printer_id).await?;
 
     // Check if sculpt is encrypted
     let seal_id = match seal_resource_id {
@@ -108,15 +110,11 @@ async fn main() -> Result<()> {
     let encrypted_object = parse_encrypted_object(&encrypted_data)?;
 
     // Decrypt using Seal SDK
-    println!("🔓 Decrypting with new seal_approve (kiosk version)...");
+    println!("🔓 Decrypting with PrintJob-based authorization...");
     decrypt_sculpt(
         &setup, 
         &seal_id, 
         encrypted_object,
-        sculpt_id,
-        kiosk_id,
-        kiosk_cap_id,
-        kiosk_version,
         printer_id,
         printer_cap_id,
         printer_version,
@@ -145,13 +143,12 @@ fn parse_encrypted_object(data: &[u8]) -> Result<seal_sdk_rs::crypto::EncryptedO
     Ok(encrypted)
 }
 
-/// Fetch sculpt information and object versions from chain
+/// Fetch sculpt information and printer version from chain
 async fn fetch_sculpt_and_objects(
     sui_client: &seal_sdk_rs::native_sui_sdk::sui_sdk::SuiClient,
     sculpt_id: SuiObjectID,
-    kiosk_id: SuiObjectID,
     printer_id: SuiObjectID,
-) -> Result<(String, Option<String>, u64, u64)> {
+) -> Result<(String, Option<String>, u64)> {
     let mut options = SuiObjectDataOptions::new();
     options.show_content = true;
     options.show_type = true;
@@ -186,18 +183,6 @@ async fn fetch_sculpt_and_objects(
     // Extract seal_resource_id
     let seal_resource_id = extract_option_string_field(fields, "seal_resource_id");
 
-    // Fetch kiosk to get its shared version
-    let kiosk_response = sui_client
-        .read_api()
-        .get_object_with_options(kiosk_id, options.clone())
-        .await?;
-    let kiosk_data = kiosk_response.data
-        .ok_or_else(|| anyhow::anyhow!("Kiosk not found"))?;
-    let kiosk_version = match kiosk_data.owner {
-        Some(Owner::Shared { initial_shared_version }) => initial_shared_version.value(),
-        _ => return Err(anyhow::anyhow!("Kiosk is not a shared object")),
-    };
-
     // Fetch printer to get its shared version
     let printer_response = sui_client
         .read_api()
@@ -210,7 +195,7 @@ async fn fetch_sculpt_and_objects(
         _ => return Err(anyhow::anyhow!("Printer is not a shared object")),
     };
 
-    Ok((structure, seal_resource_id, kiosk_version, printer_version))
+    Ok((structure, seal_resource_id, printer_version))
 }
 
 /// Extract Option<String> field from Move struct fields
@@ -230,15 +215,11 @@ fn extract_option_string_field(
     }
 }
 
-/// Decrypt sculpt using Seal SDK with new seal_approve signature
+/// Decrypt sculpt using Seal SDK with PrintJob-based authorization
 async fn decrypt_sculpt(
     setup: &DemoSetup,
     seal_id: &str,
     encrypted: seal_sdk_rs::crypto::EncryptedObject,
-    sculpt_id: SuiObjectID,
-    kiosk_id: SuiObjectID,
-    kiosk_cap_id: SuiObjectID,
-    kiosk_version: u64,
     printer_id: SuiObjectID,
     printer_cap_id: SuiObjectID,
     printer_version: u64,
@@ -270,8 +251,8 @@ async fn decrypt_sculpt(
     )
     .await?;
 
-    // Build approval transaction for new seal_approve signature
-    println!("\n🔨 Building approval transaction...");
+    // Build approval transaction for simplified seal_approve
+    println!("\n🔨 Building approval transaction (PrintJob-based)...");
     let mut builder = ProgrammableTransactionBuilder::new();
 
     // Extract resource_id from seal_id
@@ -291,42 +272,15 @@ async fn decrypt_sculpt(
     // Argument 0: _id (vector<u8>)
     let id_arg = builder.pure(id_bytes)?;
     
-    // Argument 1: sculpt_id (ID)
-    let sculpt_id_bytes = sculpt_id.into_bytes();
-    let sculpt_id_arg = builder.pure(sculpt_id_bytes.to_vec())?;
-    println!("   ✅ Arg 1 (sculpt_id): {}", sculpt_id);
-    
-    // Argument 2: kiosk (shared object)
-    let kiosk_arg = builder.obj(ObjectArg::SharedObject {
-        id: kiosk_id,
-        initial_shared_version: kiosk_version.into(),
-        mutable: false,
-    })?;
-    println!("   ✅ Arg 2 (kiosk): {} (shared, v{})", kiosk_id, kiosk_version);
-    
-    // Argument 3: kiosk_cap (owned object) - need to fetch version and digest
-    let kiosk_cap_obj = sui_client
-        .read_api()
-        .get_object_with_options(kiosk_cap_id, SuiObjectDataOptions::bcs_lossless())
-        .await?
-        .data
-        .ok_or_else(|| anyhow::anyhow!("KioskOwnerCap not found"))?;
-    let kiosk_cap_arg = builder.obj(ObjectArg::ImmOrOwnedObject((
-        kiosk_cap_id,
-        kiosk_cap_obj.version,
-        kiosk_cap_obj.digest,
-    )))?;
-    println!("   ✅ Arg 3 (kiosk_cap): {} (owned, v{})", kiosk_cap_id, kiosk_cap_obj.version);
-    
-    // Argument 4: printer (shared object)
+    // Argument 1: printer (shared object)
     let printer_arg = builder.obj(ObjectArg::SharedObject {
         id: printer_id,
         initial_shared_version: printer_version.into(),
         mutable: false,
     })?;
-    println!("   ✅ Arg 4 (printer): {} (shared, v{})", printer_id, printer_version);
+    println!("   ✅ Arg 1 (printer): {} (shared, v{})", printer_id, printer_version);
     
-    // Argument 5: printer_cap (owned object) - need to fetch version and digest
+    // Argument 2: printer_cap (owned object)
     let printer_cap_obj = sui_client
         .read_api()
         .get_object_with_options(printer_cap_id, SuiObjectDataOptions::bcs_lossless())
@@ -338,26 +292,17 @@ async fn decrypt_sculpt(
         printer_cap_obj.version,
         printer_cap_obj.digest,
     )))?;
-    println!("   ✅ Arg 5 (printer_cap): {} (owned, v{})", printer_cap_id, printer_cap_obj.version);
+    println!("   ✅ Arg 2 (printer_cap): {} (owned, v{})", printer_cap_id, printer_cap_obj.version);
 
-    // Call seal_approve in eureka module with type parameter <ATELIER>
-    // entry fun seal_approve<T>(_id, sculpt_id, kiosk, kiosk_cap, printer, printer_cap, ctx)
+    // Call seal_approve in eureka module (no type arguments!)
+    // entry fun seal_approve(_id, printer, printer_cap, ctx)
     builder.programmable_move_call(
         setup.approve_package_id.into(),
         Identifier::from_str("eureka")?,
         Identifier::from_str("seal_approve")?,
-        vec![
-            // Type argument: archimeters::atelier::ATELIER
-            seal_sdk_rs::native_sui_sdk::sui_types::TypeTag::from_str(
-                // Sculpt Type
-                "0x927efc566998883385df85bf7ff45da1c9b1c897fc5be48f3d81df1d2f3774b1::atelier::ATELIER"
-            )?
-        ],
+        vec![], // No type arguments needed!
         vec![
             id_arg,          // _id: vector<u8>
-            sculpt_id_arg,   // sculpt_id: ID
-            kiosk_arg,       // kiosk: &Kiosk
-            kiosk_cap_arg,   // kiosk_cap: &KioskOwnerCap
             printer_arg,     // printer: &Printer
             printer_cap_arg, // printer_cap: &PrinterCap
         ],
@@ -369,8 +314,9 @@ async fn decrypt_sculpt(
     println!("\n📋 Transaction Details:");
     println!("   Package: {}", setup.approve_package_id);
     println!("   Module: eureka");
-    println!("   Function: seal_approve<ATELIER>");
-    println!("   Arguments: 6 (id, sculpt_id, kiosk, kiosk_cap, printer, printer_cap)");
+    println!("   Function: seal_approve");
+    println!("   Arguments: 3 (_id, printer, printer_cap)");
+    println!("   Authorization: PrintJob existence = approval");
     println!();
 
     // Decrypt with detailed error handling
@@ -392,19 +338,21 @@ async fn decrypt_sculpt(
             eprintln!("   {}", e);
             eprintln!("\n🔍 Possible causes:");
             eprintln!("   1. ENotPrinterOwner (code 5): Caller is not the printer owner");
-            eprintln!("   2. EPrinterNotInWhitelist (code 6): Printer not in sculpt whitelist");
-            eprintln!("   3. Object not found: Invalid object IDs");
-            eprintln!("   4. Permission denied: Wrong KioskOwnerCap or PrinterCap");
+            eprintln!("   2. EInvalidPrinterCap (code 6): PrinterCap doesn't match this printer");
+            eprintln!("   3. EPrintJobNotFound (code 7): No PrintJob exists for this printer");
+            eprintln!("   4. EPrinterIdMismatch (code 8): PrintJob's printer_id mismatch");
+            eprintln!("   5. Object not found: Invalid object IDs");
             eprintln!("\n💡 Debug tips:");
-            eprintln!("   - Check printer owner: sui client object {}", printer_cap_id);
-            eprintln!("   - Check whitelist: sui client object {}", sculpt_id);
+            eprintln!("   - Check printer owner: sui client object {}", printer_id);
+            eprintln!("   - Check PrinterCap: sui client object {}", printer_cap_id);
             eprintln!("   - Verify active wallet: sui client active-address");
+            eprintln!("   - Ensure PrintJob exists: Create via frontend Print button");
             return Err(e.into());
         }
     };
 
     // Save and verify decrypted STL
-    let output_file = "decrypted_sculpt_kiosk.stl";
+    let output_file = "decrypted_sculpt_printjob.stl";
     std::fs::write(output_file, &plaintext)?;
     
     let format = if plaintext.starts_with(b"solid") {
