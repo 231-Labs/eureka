@@ -39,7 +39,8 @@ use bcs;
 /// The sculpt_id will be automatically fetched from the PrintJob.
 
 struct DemoSetup {
-    approve_package_id: seal_sdk_rs::generic_types::ObjectID,
+    seal_package_id: seal_sdk_rs::generic_types::ObjectID, // Archimeters - for Seal encryption
+    approve_package_id: seal_sdk_rs::generic_types::ObjectID, // Eureka - for seal_approve
     #[allow(dead_code)]
     key_server_ids: Vec<seal_sdk_rs::generic_types::ObjectID>,
 }
@@ -65,6 +66,9 @@ async fn main() -> Result<()> {
     println!();
 
     // Configuration - Updated package IDs
+    // NOTE: For Seal encryption/decryption, use Archimeters package (where Sculpt is defined)
+    let archimeters_package_id_str = "0xc1814c4cbd4c23f306e886c7f8aace3ce1635d0a6e896b3bf35835139945d693";
+    // Eureka package is where seal_approve is located
     let eureka_package_id_str = "0x4e43c7642828f9d8c410a47d7ed80b3df7711e49662c4704549dc05b23076bec";
     
     // Key Servers (matching frontend config)
@@ -75,7 +79,10 @@ async fn main() -> Result<()> {
     ];
 
     // Parse IDs
-    let approve_package_id: SealObjectID = eureka_package_id_str.parse()?;
+    // IMPORTANT: Seal SDK needs the ARCHIMETERS package ID for decryption
+    // because Sculpt objects are encrypted in the Archimeters package
+    let seal_package_id: SealObjectID = archimeters_package_id_str.parse()?;
+    let eureka_package_id: SealObjectID = eureka_package_id_str.parse()?;
     let printer_id: SuiObjectID = SuiObjectID::from_hex_literal(printer_id_str)?;
     let printer_cap_id: SuiObjectID = SuiObjectID::from_hex_literal(printer_cap_id_str)?;
     let key_server_ids: Vec<SealObjectID> = key_server_strs
@@ -84,7 +91,8 @@ async fn main() -> Result<()> {
         .collect::<Result<Vec<_>, _>>()?;
 
     let setup = DemoSetup {
-        approve_package_id,
+        seal_package_id,
+        approve_package_id: eureka_package_id,
         key_server_ids,
     };
 
@@ -201,14 +209,35 @@ async fn fetch_sculpt_id_from_printjob(
         _ => return Err(anyhow::anyhow!("PrintJob is not a Move object")),
     };
 
-    // Extract sculpt_id
+    // Debug: Print all fields to understand structure
+    println!("   🔍 DEBUG: PrintJob fields:");
+    for (key, value) in fields.iter() {
+        println!("      - {}: {:?}", key, value);
+    }
+
+    // Extract sculpt_id (ID type is usually represented as a String in Sui JSON)
     let sculpt_id_str = match fields.get("sculpt_id") {
-        Some(SuiMoveValue::String(id)) => id,
-        _ => return Err(anyhow::anyhow!("sculpt_id field not found in PrintJob")),
+        Some(SuiMoveValue::String(id)) => {
+            println!("   ✅ Found sculpt_id as String: {}", id);
+            id.clone()
+        }
+        Some(SuiMoveValue::Address(addr)) => {
+            println!("   ✅ Found sculpt_id as Address: {}", addr);
+            format!("0x{}", addr)
+        }
+        Some(other) => {
+            eprintln!("   ❌ sculpt_id has unexpected format: {:?}", other);
+            return Err(anyhow::anyhow!("sculpt_id has unexpected format: {:?}", other));
+        }
+        None => {
+            eprintln!("   ❌ sculpt_id field not found in PrintJob");
+            eprintln!("   Available fields: {:?}", fields.keys().collect::<Vec<_>>());
+            return Err(anyhow::anyhow!("sculpt_id field not found in PrintJob"));
+        }
     };
 
-    SuiObjectID::from_hex_literal(sculpt_id_str)
-        .map_err(|e| anyhow::anyhow!("Failed to parse sculpt_id: {}", e))
+    SuiObjectID::from_hex_literal(&sculpt_id_str)
+        .map_err(|e| anyhow::anyhow!("Failed to parse sculpt_id '{}': {}", sculpt_id_str, e))
 }
 
 /// Fetch sculpt information and printer version from chain
@@ -312,8 +341,9 @@ async fn decrypt_sculpt(
     println!("   Address: {}", current_address);
     println!("   Note: This must match the printer owner!");
     
+    // SessionKey uses the SEAL package ID (Archimeters) for encryption/decryption
     let session_key = SessionKey::new(
-        setup.approve_package_id,
+        setup.seal_package_id,
         10,
         &mut wallet,
     )
