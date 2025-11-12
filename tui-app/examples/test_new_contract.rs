@@ -32,15 +32,23 @@ struct DemoSetup {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Get sculpt_id from command line arguments
-    let sculpt_id_str = std::env::args()
-        .nth(1)
-        .ok_or_else(|| anyhow::anyhow!("Usage: cargo run --example test_new_contract -- <sculpt_id>"))?;
+    // Get sculpt_id and printer_id from command line arguments
+    let args: Vec<String> = std::env::args().collect();
+    
+    if args.len() < 3 {
+        return Err(anyhow::anyhow!(
+            "Usage: cargo run --example test_new_contract -- <sculpt_id> <printer_id>"
+        ));
+    }
+    
+    let sculpt_id_str = &args[1];
+    let printer_id_str = &args[2];
     
     println!("🔐 Decrypting Sculpt: {}", sculpt_id_str);
+    println!("🖨️  Printer ID: {}", printer_id_str);
 
     // Configuration - New Archimeters package (constant)
-    let package_id_str = "0x73d08645087a5a7c01a619cb32df1ee06f904cbc268976e3eae0885bbf742150";
+    let package_id_str = "0x5752c294a95d430ea0042f2d202d160ea4b4ec74b55212a1ec5dd8a87e5d02dd";
     
     // Key Servers (matching frontend config - all 3 servers with threshold=1)
     let key_server_strs = vec![
@@ -52,6 +60,7 @@ async fn main() -> Result<()> {
     // Parse IDs
     let approve_package_id: SealObjectID = package_id_str.parse()?;
     let sculpt_id: ObjectID = sculpt_id_str.parse()?;
+    let printer_id: ObjectID = printer_id_str.parse()?;
     let key_server_ids: Vec<SealObjectID> = key_server_strs
         .iter()
         .map(|s| s.parse())
@@ -82,7 +91,7 @@ async fn main() -> Result<()> {
 
     // Decrypt using Seal SDK
     println!("🔓 Decrypting...");
-    decrypt_sculpt(&setup, &seal_id, encrypted_object).await?;
+    decrypt_sculpt(&setup, sculpt_id, printer_id, &seal_id, encrypted_object).await?;
 
     println!("✅ Decryption completed successfully!");
     Ok(())
@@ -174,6 +183,8 @@ fn extract_option_string_field(
 /// Decrypt sculpt using Seal SDK
 async fn decrypt_sculpt(
     setup: &DemoSetup,
+    _sculpt_id: ObjectID,
+    printer_id: ObjectID,
     seal_id: &str,
     encrypted: seal_sdk_rs::crypto::EncryptedObject,
 ) -> Result<()> {
@@ -217,15 +228,18 @@ async fn decrypt_sculpt(
     let id_bytes = hex::decode(id_hex)
         .map_err(|e| anyhow::anyhow!("Failed to decode hex ID: {}", e))?;
     
+    // Prepare arguments for seal_approve
     let id_arg = builder.pure(id_bytes)?;
+    let printer_id_arg = builder.pure(bcs::to_bytes(&printer_id)?)?;
 
     // Call seal_approve function in the sculpt module
+    // Parameters: _id: vector<u8>, _printer_id: ID
     builder.programmable_move_call(
         setup.approve_package_id.into(),
         Identifier::from_str("sculpt")?,
         Identifier::from_str("seal_approve")?,
-        vec![],
-        vec![id_arg],
+        vec![],  // No type arguments needed
+        vec![id_arg, printer_id_arg],
     );
 
     let approve_ptb: ProgrammableTransaction = builder.finish();
