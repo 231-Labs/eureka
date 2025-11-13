@@ -223,9 +223,9 @@ async fn run_app<B: ratatui::backend::Backend>(
                         }
                         KeyCode::Char('t') => {
                             if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
-                                app_guard.print_output.push("[INFO] Starting test mode (T key pressed)".to_string());
+                                app_guard.print_output.push("[INFO] Starting mock print mode (T key pressed)".to_string());
                                 drop(app_guard);
-                                App::handle_test_decryption(Arc::clone(&app_arc)).await?;
+                                App::handle_mock_print_with_printjob(Arc::clone(&app_arc)).await?;
                             }
                         }
                         KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3') => {

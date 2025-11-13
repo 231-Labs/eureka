@@ -58,7 +58,7 @@ impl Wallet {
         options.show_owner = true;
         options.show_type = true;
         
-        // Get current network's package ID and construct the filter
+        // Get current network's package ID
         let current_package_id = self.network_state.get_current_package_ids().eureka_package_id;
         let printer_cap_type = format!("{}::eureka::PrinterCap", current_package_id);
         

@@ -161,4 +161,56 @@ impl App {
             }
         }
     }
+
+    /// Complete print job using PrintJob task context instead of sculpt selection
+    pub async fn test_complete_print_job_from_task(&mut self, _task: &crate::app::print_job::PrintTask) -> Result<(), String> {
+        let builder = self.create_transaction_builder().await?;
+        
+        // Get printer info from current app state
+        let address = self.wallet.get_active_address().await
+            .map_err(|e| format!("Failed to get active address: {}", e))?;
+        
+        let info = self.wallet.get_printer_info(address).await
+            .map_err(|e| format!("Failed to get printer info: {}", e))?;
+        
+        let cap_id = self.wallet.get_printer_cap_id(address).await
+            .map_err(|e| format!("Failed to get PrinterCap ID: {}", e))?;
+        
+        // Parse required object IDs
+        let printer_cap_id = Self::parse_object_id(&cap_id, "printer cap ID")?;
+        let printer_object_id = Self::parse_object_id(&info.id, "printer object ID")?;
+        
+        self.set_message(MessageType::Info, "Transferring completed PrintJob to printer owner wallet...".to_string());
+        
+        // Use the simplified transfer_completed_print_job function
+        // This removes the PrintJob from the printer and transfers it to the printer owner's wallet
+        // allowing the printer to accept new jobs immediately
+        match builder.transfer_completed_print_job(printer_cap_id, printer_object_id).await {
+            Ok(tx_id) => {
+                self.set_message(
+                    MessageType::Success,
+                    format!("PrintJob transferred to printer owner wallet successfully (Tx: {})", tx_id)
+                );
+                
+                // Clear tasks and reset status
+                self.tasks.clear();
+                self.print_status = crate::app::PrintStatus::Idle;
+                self.script_status = crate::app::ScriptStatus::Idle;
+                
+                // Update print tasks to refresh the list
+                if let Err(e) = self.update_print_tasks().await {
+                    self.set_message(MessageType::Error, format!("Failed to update print tasks: {}", e));
+                } else {
+                    self.set_message(MessageType::Success, "PrintJob transferred and printer is ready for next job".to_string());
+                }
+                
+                Ok(())
+            }
+            Err(e) => {
+                let user_friendly_error = parse_blockchain_error(&e.to_string(), "transfer completed PrintJob");
+                self.set_message(MessageType::Error, user_friendly_error.clone());
+                Err(user_friendly_error)
+            }
+        }
+    }
 }

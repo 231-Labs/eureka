@@ -67,11 +67,11 @@ async fn main() -> Result<()> {
     println!("   Printer: {}", printer_id_str);
     println!();
 
-    // Configuration - Updated package IDs
+    // Configuration - Fresh deployment 2025-11-13
     // IMPORTANT: Use EUREKA package ID for BOTH encryption and decryption
     // Seal uses IBE (Identity-Based Encryption) where packageId is the namespace
     // Since seal_approve is in Eureka package, we use Eureka as the namespace
-    let eureka_package_id_str = "0x4e43c7642828f9d8c410a47d7ed80b3df7711e49662c4704549dc05b23076bec";
+    let eureka_package_id_str = "0x8852004ffc677790d0ee729aa386286cbcbc7f4f1b4aa87c50213d2acb5d678f";
     
     // Key Servers (matching frontend config)
     let key_server_strs = vec![

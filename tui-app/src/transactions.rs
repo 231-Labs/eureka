@@ -429,6 +429,28 @@ impl TransactionBuilder {
         ).await
     }
 
+    pub async fn transfer_completed_print_job(
+        &self,
+        printer_cap_id: ObjectID,
+        printer_id: ObjectID,
+    ) -> Result<String> {
+        // For now, use a simplified approach that calls the function directly
+        // The Move contract will need to be updated to handle the transfer internally
+        // or we'll need to implement the PTB logic in a different way
+        
+        let cap_arg = self.create_printer_cap_arg(printer_cap_id).await?;
+        let printer_arg = self.create_shared_object_arg(printer_id, true).await?;
+        let clock_arg = self.create_clock_arg().await?;
+        
+        // Note: This is a temporary implementation
+        // The actual implementation will need to handle the returned PrintJob
+        // and transfer it using Sui's transfer function
+        self.execute_eureka_call(
+            "transfer_completed_print_job",
+            vec![cap_arg, printer_arg, clock_arg],
+        ).await
+    }
+
     /// Create and assign a free print job
     pub async fn create_and_assign_print_job_free(
         &self,

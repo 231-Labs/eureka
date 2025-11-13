@@ -2,7 +2,7 @@
 pub mod core;
 mod network;
 mod ui_state;
-mod printer;
+pub mod printer;
 pub mod print_job;
 
 // export App and related types

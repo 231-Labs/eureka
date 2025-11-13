@@ -18,10 +18,10 @@ use shared_crypto::intent::Intent;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-/// Direct test of seal_approve using pure Sui SDK
-/// New simplified signature: seal_approve(_id, printer, printer_cap, ctx)
+/// Test seal_approve using pure Sui SDK
+/// Signature: seal_approve(_id, printer, printer_cap, ctx)
 /// 
-/// Usage: cargo run --example test_seal_approve_direct -- <printer_id> <printer_cap_id>
+/// Usage: cargo run --example test_seal_approve -- <printer_id> <printer_cap_id>
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -37,9 +37,9 @@ async fn main() -> Result<()> {
     let printer_id_str = &args[1];
     let printer_cap_id_str = &args[2];
     
-    println!("🧪 Direct Seal Approve Test - Simplified Signature");
-    println!("===================================================");
-    println!("New: seal_approve(_id, printer, printer_cap, ctx)\n");
+    println!("🧪 Seal Approve Test");
+    println!("====================");
+    println!("Signature: seal_approve(_id, printer, printer_cap, ctx)\n");
     
     // Parse IDs
     let printer_id = ObjectID::from_hex_literal(printer_id_str)?;
@@ -50,9 +50,9 @@ async fn main() -> Result<()> {
     println!("   PrinterCap: {}", printer_cap_id);
     println!();
     
-    // Package ID (updated)
+    // Package ID (fresh deployment 2025-11-13)
     let eureka_package_id = ObjectID::from_hex_literal(
-        "0x4e43c7642828f9d8c410a47d7ed80b3df7711e49662c4704549dc05b23076bec"
+        "0x8852004ffc677790d0ee729aa386286cbcbc7f4f1b4aa87c50213d2acb5d678f"
     )?;
     
     println!("📦 Package ID:");

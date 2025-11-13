@@ -24,9 +24,9 @@ impl App {
             }
         };
         
-        let test_dir = current_dir.join("test_decryption");
-        let input_stl = test_dir.join("decrypted.stl");
-        let output_gcode = test_dir.join("output.gcode");
+        // Use mock_print.stl directly instead of test_decryption/decrypted.stl
+        let input_stl = current_dir.join("mock_print.stl");
+        let output_gcode = current_dir.join("output.gcode");
         
         // Check if input file exists
         if !input_stl.exists() {

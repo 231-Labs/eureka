@@ -23,14 +23,12 @@ module eureka::eureka {
         get_print_job_id,
         get_print_job_printer_id,
         create_print_job,
-        extract_print_job_fees,
     };
     use archimeters::sculpt::{
         Sculpt,
         print_sculpt,
         get_sculpt_info,
-        get_seal_resource_id,
-        add_print_record
+        get_seal_resource_id, 
     };
     use archimeters::atelier::ATELIER;
     use sui::kiosk::{ Self, Kiosk, KioskOwnerCap };
@@ -344,84 +342,31 @@ module eureka::eureka {
         
         // Sculpt is automatically returned when the reference goes out of scope
     }
-
-    // Completes a print job and updates the printer status
-    public fun complete_print_job(
-        printer_cap: &PrinterCap,
-        printer: &mut Printer,
-        sculpt: &mut Sculpt<ATELIER>,
-        clock: &clock::Clock,
-        ctx: &mut TxContext,
-    ) { 
-        // check if the printer cap is valid
-        assert!(printer_cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
-
-        // check if the print job is active (not completed)
-        assert!(!get_print_job_status_via_printer(printer), EPrintJobCompleted);
-
-        // check if the print job has been started
-        assert!(*get_print_job_start_time_via_printer(printer) > 0, EPrintJobNotStarted);
-        
-        // Update job status
-        mutate_print_job_status_via_printer(printer);
-        
-        // Transfer fees to printer pool
-        withdraw_fees_via_printer(printer);
-        
-        // Record end time
-        mutate_print_job_end_time_via_printer(printer, clock);
-        
-        // Emit completion event
-        emit_print_job_completed_event(printer, ctx);
-
-        // Archive print job to sculpt
-        let print_job = dof::remove<vector<u8>, PrintJob>(&mut printer.id, b"print_job");
-        add_print_record(sculpt, print_job, clock);
-    }
     
-    // Completes a print job from a sculpt in a kiosk and removes printer from whitelist
-    public fun complete_print_job_from_kiosk(
+    // Transfer completed print job from printer to printer owner's wallet
+    // This allows the printer to accept new jobs while keeping the completed job for later settlement
+    public fun completed_and_detach_print_job(
         printer_cap: &PrinterCap,
         printer: &mut Printer,
-        kiosk: &mut Kiosk,
-        kiosk_cap: &KioskOwnerCap,
-        sculpt_id: ID,
         clock: &clock::Clock,
-        ctx: &mut TxContext,
-    ) {
+        ctx: &TxContext,
+    ): PrintJob {
         // check if the printer cap is valid
         assert!(printer_cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
-
         // check if the print job is active (not completed)
         assert!(!get_print_job_status_via_printer(printer), EPrintJobCompleted);
-
         // check if the print job has been started
         assert!(*get_print_job_start_time_via_printer(printer) > 0, EPrintJobNotStarted);
-        
-        // Borrow the sculpt from kiosk
-        let sculpt = kiosk::borrow_mut<Sculpt<ATELIER>>(kiosk, kiosk_cap, sculpt_id);
-        
         // Update job status
         mutate_print_job_status_via_printer(printer);
-        
-        // Transfer fees to printer pool
-        withdraw_fees_via_printer(printer);
-        
         // Record end time
         mutate_print_job_end_time_via_printer(printer, clock);
-        
         // Emit completion event
         emit_print_job_completed_event(printer, ctx);
-
-        // Archive print job to sculpt
+        // Remove print job from printer and transfer to printer owner
         let print_job = dof::remove<vector<u8>, PrintJob>(&mut printer.id, b"print_job");
-        add_print_record(sculpt, print_job, clock);
-        
-        // Remove printer from whitelist to revoke decryption access
-        let printer_id = object::uid_to_inner(&printer.id);
-        archimeters::sculpt::remove_printer_from_whitelist(sculpt, printer_id, ctx);
-        
-        // Sculpt is automatically returned when the reference goes out of scope
+
+        print_job
     }
 
     // Withdraws accumulated fees from a printer
@@ -484,10 +429,10 @@ module eureka::eureka {
     }
 
     // Transfers print job fees to printer pool
-    fun withdraw_fees_via_printer(printer: &mut Printer) {
-        let fee = extract_print_job_fees(dof::borrow_mut(&mut printer.id, b"print_job"));
-        add_fees(printer, fee);
-    }
+    // fun withdraw_fees_via_printer(printer: &mut Printer) {
+    //     let fee = extract_print_job_fees(dof::borrow_mut(&mut printer.id, b"print_job"));
+    //     add_fees(printer, fee);
+    // }
 
     /// === Event Functions ===
     

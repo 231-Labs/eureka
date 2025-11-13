@@ -13,10 +13,16 @@ node_modules/
 
 # Documentation
 /docs/
+
+# TUI App generated files
 tui-app/Gcode-Transmit/test.gcode
 tui-app/Gcode-Transmit/test.stl
 tui-app/Gcode-Transmit/Gcode-Send-PID.pid
 tui-app/Gcode-Transmit/W-copy.sh
+tui-app/mock_print.stl
+tui-app/output.gcode
+tui-app/test_decryption/
+*.stl
 # Environment
 .env
 .env.*
