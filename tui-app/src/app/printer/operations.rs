@@ -1,12 +1,121 @@
 use crate::app::core::App;
 use crate::app::{MessageType, ScriptStatus, PrintStatus};
+use crate::constants::PRINT_OUTPUT_MAX_LINES;
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::io::{BufReader, AsyncBufReadExt};
 
 impl App {
-    // main function to run the print script
+    /// Run slicing test without printer connection
+    pub async fn run_slice_test(app: Arc<Mutex<App>>) -> Result<bool, String> {
+        {
+            let mut app_guard = app.lock().await;
+            app_guard.print_output.push("[TEST] Starting slicing test...".to_string());
+        }
+        
+        let current_dir = match std::env::current_dir() {
+            Ok(dir) => dir,
+            Err(e) => {
+                let error_msg = format!("Failed to get current directory: {}", e);
+                let mut app_locked = app.lock().await;
+                app_locked.print_output.push(format!("[TEST] ERROR: {}", error_msg));
+                return Err(error_msg);
+            }
+        };
+        
+        // Use mock_print.stl directly instead of test_decryption/decrypted.stl
+        let input_stl = current_dir.join("mock_print.stl");
+        let output_gcode = current_dir.join("output.gcode");
+        
+        // Check if input file exists
+        if !input_stl.exists() {
+            let error_msg = format!("Input STL not found at {}", input_stl.display());
+            let mut app = app.lock().await;
+            app.print_output.push(format!("[TEST] ERROR: {}", error_msg));
+            return Err(error_msg);
+        }
+        
+        {
+            let mut app = app.lock().await;
+            app.print_output.push(format!("[TEST] Running PrusaSlicer on: {}", input_stl.display()));
+        }
+        
+        // Get PrusaSlicer config
+        let transmit_dir = current_dir.join("Gcode-Transmit").join("main");
+        let config_file = transmit_dir.join("Ender-3_set.ini");
+        
+        if !config_file.exists() {
+            let error_msg = format!("Config file not found at {}", config_file.display());
+            let mut app = app.lock().await;
+            app.print_output.push(format!("[TEST] ERROR: {}", error_msg));
+            return Err(error_msg);
+        }
+        
+        // Run PrusaSlicer
+        let mut child = match tokio::process::Command::new("prusa-slicer")
+            .arg("--load")
+            .arg(&config_file)
+            .arg("--export-gcode")
+            .arg("--output")
+            .arg(&output_gcode)
+            .arg(&input_stl)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn() {
+                Ok(child) => child,
+                Err(e) => {
+                    let error_msg = format!("Failed to start PrusaSlicer: {}", e);
+                    let mut app = app.lock().await;
+                    app.print_output.push(format!("[TEST] ERROR: {}", error_msg));
+                    return Err(error_msg);
+                }
+            };
+        
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+        let app_clone_stdout = Arc::clone(&app);
+        let app_clone_stderr = Arc::clone(&app);
+        
+        let stdout_handle = tokio::spawn(async move {
+            let mut reader = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                let mut app = app_clone_stdout.lock().await;
+                app.print_output.push(format!("[TEST] {}", line));
+            }
+        });
+        
+        let stderr_handle = tokio::spawn(async move {
+            let mut reader = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                let mut app = app_clone_stderr.lock().await;
+                app.print_output.push(format!("[TEST] {}", line));
+            }
+        });
+        
+        let status = match child.wait().await {
+            Ok(status) => status,
+            Err(e) => {
+                let error_msg = format!("PrusaSlicer execution failed: {}", e);
+                let mut app = app.lock().await;
+                app.print_output.push(format!("[TEST] ERROR: {}", error_msg));
+                return Err(error_msg);
+            }
+        };
+        
+        let _ = tokio::join!(stdout_handle, stderr_handle);
+        
+        let mut app = app.lock().await;
+        if status.success() {
+            app.print_output.push(format!("[TEST] G-code saved to: {}", output_gcode.display()));
+            Ok(true)
+        } else {
+            let error_msg = format!("PrusaSlicer failed with exit code: {:?}", status.code());
+            app.print_output.push(format!("[TEST] ERROR: {}", error_msg));
+            Err(error_msg)
+        }
+    }
+
     pub async fn run_print_script(app: Arc<Mutex<App>>) -> Result<bool, String> {
         {
             let mut app_guard = app.lock().await;
@@ -16,13 +125,10 @@ impl App {
             app_guard.set_message(MessageType::Info, "Starting print script...".to_string());
         }
         
-        // Use channel to wait for script completion
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<bool, String>>(1);
         let app_clone = Arc::clone(&app);
         
-        // Get current directory
-        let current_dir = match std::env::current_dir()
-        {
+        let current_dir = match std::env::current_dir() {
             Ok(dir) => dir,
             Err(e) => {
                 let error_msg = format!("Failed to get current directory: {}", e);
@@ -34,7 +140,6 @@ impl App {
             }
         };
         
-        // Check if Gcode-Transmit directory exists before executing script
         let transmit_dir = current_dir.join("Gcode-Transmit");
         {
             if !transmit_dir.exists() || !transmit_dir.is_dir() {
@@ -47,7 +152,6 @@ impl App {
             }
         }
         
-        // start print job on blockchain
         {
             let mut app_guard = app.lock().await;
             
@@ -69,10 +173,8 @@ impl App {
             }
         }
         
-        // start Gcode monitoring
         App::setup_gcode_monitoring(Arc::clone(&app_clone)).await;
         
-        // start print script
         tokio::spawn(async move {
             let current_dir = std::env::current_dir().unwrap_or_default();
             let script_path = current_dir.join("Gcode-Transmit").join("Gcode-Process.sh");
@@ -96,37 +198,33 @@ impl App {
                     }
                 };
 
-            // Set up output handling
             let stdout = child.stdout.take().unwrap();
             let stderr = child.stderr.take().unwrap();
             let app_clone_stdout = Arc::clone(&app_clone);
             let app_clone_stderr = Arc::clone(&app_clone);
 
-            // Handle standard output
             let stdout_handle = tokio::spawn(async move {
                 let mut reader = BufReader::new(stdout).lines();
-                while let Ok(Some(line)) = reader.next_line().await {
-                    let mut app = app_clone_stdout.lock().await;
-                    app.print_output.push(format!("[STDOUT] {}", line));
-                    if app.print_output.len() > 1000 {
-                        app.print_output.remove(0);
-                    }
-                }
+                        while let Ok(Some(line)) = reader.next_line().await {
+                            let mut app = app_clone_stdout.lock().await;
+                            app.print_output.push(format!("[STDOUT] {}", line));
+                            if app.print_output.len() > PRINT_OUTPUT_MAX_LINES {
+                                app.print_output.remove(0);
+                            }
+                        }
             });
 
-            // Handle error output
             let stderr_handle = tokio::spawn(async move {
                 let mut reader = BufReader::new(stderr).lines();
-                while let Ok(Some(line)) = reader.next_line().await {
-                    let mut app = app_clone_stderr.lock().await;
-                    app.print_output.push(format!("[STDERR] {}", line));
-                    if app.print_output.len() > 1000 {
-                        app.print_output.remove(0);
-                    }
-                }
+                        while let Ok(Some(line)) = reader.next_line().await {
+                            let mut app = app_clone_stderr.lock().await;
+                            app.print_output.push(format!("[STDERR] {}", line));
+                            if app.print_output.len() > PRINT_OUTPUT_MAX_LINES {
+                                app.print_output.remove(0);
+                            }
+                        }
             });
 
-            // Wait for script completion
             let status = match child.wait().await {
                 Ok(status) => status,
                 Err(e) => {
@@ -139,17 +237,14 @@ impl App {
                 }
             };
 
-            // Wait for output handling to complete
             let _ = tokio::join!(stdout_handle, stderr_handle);
 
-            // Update final status
             let mut app = app_clone.lock().await;
             if status.success() {
                 app.script_status = ScriptStatus::Completed;
                 app.print_status = PrintStatus::Completed;
                 app.set_message(MessageType::Success, "Print completed successfully".to_string());
                 
-                // Try to update blockchain state
                 let should_update_blockchain = 
                     !app.printer_id.eq("No Printer ID") && 
                     app.sculpt_state.selected()
@@ -157,7 +252,6 @@ impl App {
                         .unwrap_or(false);
                 
                 if should_update_blockchain {
-                    // Spawn a task to update blockchain status
                     let app_clone_for_completion = Arc::clone(&app_clone);
                     tokio::spawn(async move {
                         Self::update_blockchain_on_completion(app_clone_for_completion).await;
@@ -178,20 +272,16 @@ impl App {
                     None => "Process terminated with unknown status",
                 };
                 
-                // build detailed error information
                 let error_code = status.code().unwrap_or(-1);
                 let full_error = format!("Print failed (code {}): {}", error_code, error_message);
                 
-                // update application state
                 app.script_status = ScriptStatus::Failed(full_error.clone());
                 app.set_message(MessageType::Error, full_error.clone());
                 
-                // send error result
                 let _ = tx.send(Err(full_error)).await;
             }
         });
         
-        // Wait for script completion and return result
         match rx.recv().await {
             Some(result) => result,
             None => Err("Communication channel with print script was closed unexpectedly".to_string())
@@ -199,16 +289,13 @@ impl App {
         
     }
 
-    // stop print script
+    #[allow(dead_code)]
     pub async fn run_stop_script(&mut self) -> Result<()> {
-        // immediately show stopping state
         self.set_message(MessageType::Info, "Stopping print...".to_string());
         
-        // get current execution directory
         let current_dir = std::env::current_dir()?;
         let script_path = current_dir.join("Gcode-Transmit").join("Gcode-Process.sh");
         
-        // check if script exists
         if !script_path.exists() {
             let error_msg = format!("Script file does not exist: {}", script_path.display());
             self.print_output.push(format!("[ERROR] {}", error_msg));
@@ -217,7 +304,6 @@ impl App {
             return Ok(());
         }
         
-        // execute script
         let script_path_str = script_path.to_string_lossy();
         let command = format!("{} --stop", script_path_str);
         
@@ -237,15 +323,11 @@ impl App {
                 }
             };
 
-        // process output
         if output.status.success() {
-            // get message from output
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            // reset state
             self.script_status = ScriptStatus::Idle;
             self.print_status = PrintStatus::Idle;
             
-            // record output for debugging
             if !stdout.is_empty() {
                 self.print_output.push(format!("[STDOUT] {}", stdout));
             }
@@ -254,7 +336,6 @@ impl App {
                 if stdout.is_empty() { "Print stopped successfully".to_string() } else { stdout }
             );
         } else {
-            // process error
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
             
@@ -281,7 +362,6 @@ impl App {
         Ok(())
     }
 
-    // Helper method to update blockchain status after print completion
     pub async fn update_blockchain_on_completion(app_clone: Arc<Mutex<App>>) {
         let mut completion_app = app_clone.lock().await;
         

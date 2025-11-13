@@ -152,8 +152,8 @@ impl TransactionExecutor {
     async fn sign_and_execute(&self, tx_data: TransactionData) -> Result<SuiTransactionBlockResponse> {
         // Sign transaction
         let keystore_path = PathBuf::from(std::env::var("HOME")?).join(".sui").join("sui_config").join("sui.keystore");
-        let keystore = FileBasedKeystore::new(&keystore_path)?;
-        let signature = keystore.sign_secure(&self.sender, &tx_data, Intent::sui_transaction())?;
+        let keystore = FileBasedKeystore::load_or_create(&keystore_path)?;
+        let signature = keystore.sign_secure(&self.sender, &tx_data, Intent::sui_transaction()).await?;
 
         // Execute transaction and wait for confirmation
         let transaction_response = self.sui_client
@@ -257,7 +257,7 @@ impl TransactionBuilder {
         let registry_arg = CallArg::Object(ObjectArg::SharedObject {
             id: registry_id,
             initial_shared_version: registry_version.into(),
-            mutable: true,
+            mutability: sui_types::transaction::SharedObjectMutability::Mutable,
         });
         
         // Create printer name argument
@@ -271,7 +271,7 @@ impl TransactionBuilder {
         self.executor.execute_move_call(
             package_id,
             "eureka",
-            "register_printer",
+            "register_printer_and_transfer",
             vec![],
             vec![registry_arg, name_arg],
             None,
@@ -321,7 +321,11 @@ impl TransactionBuilder {
         Ok(CallArg::Object(ObjectArg::SharedObject {
             id: object_id,
             initial_shared_version: version.into(),
-            mutable,
+            mutability: if mutable {
+                sui_types::transaction::SharedObjectMutability::Mutable
+            } else {
+                sui_types::transaction::SharedObjectMutability::Immutable
+            },
         }))
     }
 
@@ -422,6 +426,28 @@ impl TransactionBuilder {
         self.execute_eureka_call(
             "complete_print_job",
             vec![cap_arg, printer_arg, sculpt_arg, clock_arg],
+        ).await
+    }
+
+    pub async fn transfer_completed_print_job(
+        &self,
+        printer_cap_id: ObjectID,
+        printer_id: ObjectID,
+    ) -> Result<String> {
+        // For now, use a simplified approach that calls the function directly
+        // The Move contract will need to be updated to handle the transfer internally
+        // or we'll need to implement the PTB logic in a different way
+        
+        let cap_arg = self.create_printer_cap_arg(printer_cap_id).await?;
+        let printer_arg = self.create_shared_object_arg(printer_id, true).await?;
+        let clock_arg = self.create_clock_arg().await?;
+        
+        // Note: This is a temporary implementation
+        // The actual implementation will need to handle the returned PrintJob
+        // and transfer it using Sui's transfer function
+        self.execute_eureka_call(
+            "transfer_completed_print_job",
+            vec![cap_arg, printer_arg, clock_arg],
         ).await
     }
 

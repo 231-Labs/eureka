@@ -1,6 +1,6 @@
 use ratatui::widgets::ListState;
 use crate::wallet::{Wallet, SculptItem, PrinterInfo};
-use crate::utils::{setup_for_read, shorten_id, NetworkState};
+use crate::utils::{setup_for_read, shorten_id, NetworkState, format_sui_balance};
 use anyhow::Result;
 use sui_sdk::SuiClient;
 use std::sync::Arc;
@@ -66,6 +66,8 @@ pub struct App {
     pub print_status: PrintStatus,
     pub success_message: Option<String>,
     pub print_output: Vec<String>,  // store print output
+    pub is_loading_sculpts: bool,  // Loading state for Sculpts
+    pub is_toggling_mode: bool,    // True when switching between online/offline modes
 }
 
 impl App {
@@ -95,24 +97,14 @@ impl App {
             }
         };
         
-        // Get Sculpt items
-        let sculpt_items = match wallet.get_user_sculpt(wallet.get_active_address().await?).await {
-            Ok(items) => items,
-            Err(_) => vec![SculptItem {
-                alias: "Error loading models".to_string(),
-                blob_id: String::new(),
-                printed_count: 0,
-                id: String::new(),
-            }]
-        };
+        // Format pool balance to SUI
+            let pool_balance_formatted = if printer_info.pool_balance > 0 {
+                format_sui_balance(printer_info.pool_balance)
+            } else {
+                "0.00 SUI".to_string()
+            };
         
-        // format pool balance to SUI
-        let pool_balance_formatted = if printer_info.pool_balance > 0 {
-            format!("{:.2} SUI", printer_info.pool_balance as f64 / 1_000_000_000.0)
-        } else {
-            "0.00 SUI".to_string()
-        };
-        
+        // Initialize with empty sculpts, will load asynchronously
         let mut app = App {
             sui_client,
             wallet,
@@ -135,11 +127,13 @@ impl App {
             printer_alias: String::new(),
             printer_registration_message: String::new(),
             registration_status: RegistrationStatus::Inputting,
-            sculpt_items,
+            sculpt_items: vec![],  // Will be loaded asynchronously
             script_status: ScriptStatus::Idle,
             print_status: PrintStatus::Idle,
             success_message: None,
             print_output: vec![],
+            is_loading_sculpts: true,  // Start loading
+            is_toggling_mode: false,   // Not toggling initially
         };
         
         // Check if printer registration is needed
@@ -162,13 +156,11 @@ impl App {
         Ok(app)
     }
 
-    // clear error and success message
     pub fn clear_error(&mut self) {
         self.error_message = None;
         self.success_message = None;
     }
 
-    // set message method
     pub fn set_message(&mut self, message_type: MessageType, message: String) {
         self.message_type = message_type.clone();
         match message_type {
@@ -188,32 +180,26 @@ impl App {
     }
 
     pub async fn update_basic_info(&mut self) -> Result<()> {
-        // try to get latest info from blockchain
         let address = self.wallet.get_active_address().await?;
         
-        // get basic balance info
         self.sui_balance = self.wallet.get_sui_balance(address).await?;
         self.wal_balance = self.wallet.get_walrus_balance(address).await?;
         
-        // get printer info
         match self.wallet.get_printer_info(address).await {
             Ok(info) => {
-                // println!("Successfully got printer ID: {}", info.id);
                 self.printer_id = info.id.clone();
 
                 if info.pool_balance > 0 {
-                    self.harvestable_rewards = format!("{:.2} SUI", info.pool_balance as f64 / 1_000_000_000.0);
+                    self.harvestable_rewards = format_sui_balance(info.pool_balance);
                 } else {
                     self.harvestable_rewards = "0.00 SUI".to_string();
                 }
             }
             Err(e) => {
-                // println!("Failed to get printer ID: {}", e);
                 self.set_message(MessageType::Error, format!("Failed to get printer ID: {}", e));
             }
         }
         
-        // get available models
         match self.wallet.get_user_sculpt(address).await {
             Ok(items) => {
                 self.sculpt_items = items;
@@ -222,7 +208,6 @@ impl App {
                 }
             }
             Err(e) => {
-                // println!("Failed to load 3D models: {}", e);
                 self.set_message(MessageType::Error, format!("Failed to load 3D models: {}", e));
             }
         }
@@ -232,26 +217,19 @@ impl App {
 
     pub async fn update_print_tasks(&mut self) -> Result<()> {
         if self.printer_id != "No Printer ID" {
-            // Get current active print task
             match self.wallet.get_active_print_job(&self.printer_id).await {
                 Ok(Some(task)) => {
-                    // Check if we already have this task
                     let task_exists = self.tasks.iter().any(|t| t.id == task.id);
                     
                     if !task_exists {
-                        // If it's a new task, add to the beginning of task list
                         self.tasks.insert(0, task.clone());
-                        // Ensure the newest task is selected
                         self.tasks_state.select(Some(0));
-                        // New task defaults to idle state
                         self.print_status = PrintStatus::Idle;
                         self.script_status = ScriptStatus::Idle;
                         self.set_message(MessageType::Success, format!("Found print task: {}", task.name));
                     } else {
-                        // If task already exists, update its status
                         if let Some(existing_task) = self.tasks.iter_mut().find(|t| t.id == task.id) {
                             *existing_task = task.clone();
-                            // Only set to printing status when script is running
                             if matches!(self.script_status, ScriptStatus::Running) {
                                 self.print_status = PrintStatus::Printing;
                             }
@@ -259,7 +237,6 @@ impl App {
                     }
                 }
                 Ok(None) => {
-                    // If there's no active task, set printer to idle state
                     self.print_status = PrintStatus::Idle;
                     self.script_status = ScriptStatus::Idle;
                 }

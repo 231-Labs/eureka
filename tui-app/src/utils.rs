@@ -3,15 +3,26 @@ use sui_sdk::SuiClient;
 use sui_sdk::SuiClientBuilder;
 use sui_sdk::types::base_types::SuiAddress;
 use sui_sdk::wallet_context::WalletContext;
-use crate::constants::{NETWORKS, NETWORK_PACKAGE_IDS, NetworkPackageIds};
+use crate::constants::{NETWORKS, NETWORK_PACKAGE_IDS, NetworkPackageIds, SUI_DECIMALS};
 use dirs::home_dir;
 
 pub fn shorten_id(id: &str) -> String {
     if id.len() > 16 {
-        format!("{}...{}", &id[..8], &id[id.len()-8..])
+        // For addresses like 0x598928d17a9a5dadfaffdaca2e5d2315bd2e9387d73c8a63488a1a0f4d73ffbd
+        // Show: 0x598928...4d73ffbd (first 8 chars including 0x, last 8 chars)
+        format!("{}...{}", &id[..10], &id[id.len()-8..])
     } else {
         id.to_string()
     }
+}
+
+pub fn format_sui_balance(amount: u128) -> String {
+    format!("{:.2} SUI", amount as f64 / SUI_DECIMALS)
+}
+
+#[allow(dead_code)]
+pub fn format_sui_amount(amount: u128, decimals: u64) -> String {
+    format!("{:.2}", amount as f64 / 10_f64.powi(decimals as i32))
 }
 
 #[derive(Clone)]
@@ -22,7 +33,7 @@ pub struct NetworkState {
 impl NetworkState {
     pub fn new() -> Self {
         NetworkState {
-            current_network: 1  // 默認為 testnet
+            current_network: 1  // Default to testnet
         }
     }
 
@@ -55,7 +66,7 @@ pub async fn setup_for_read(network_state: &NetworkState) -> Result<(SuiClient, 
         .join("sui_config")
         .join("client.yaml");
         
-    let mut context = WalletContext::new(&config_path, None, None)?;
+    let mut context = WalletContext::new(&config_path)?;
     let active_address = context.active_address()?;
     
     Ok((sui, active_address))

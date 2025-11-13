@@ -1,4 +1,5 @@
 use std::time::{SystemTime, UNIX_EPOCH};
+use crate::utils::format_sui_balance;
 
 #[derive(Clone, Debug)]
 pub enum TaskStatus {
@@ -20,7 +21,6 @@ pub struct PrintTask {
 }
 
 impl PrintTask {
-    // format end time to display string
     pub fn format_end_time(&self) -> String {
         if let Some(end_time) = self.end_time {
             if end_time > 0 {
@@ -32,7 +32,7 @@ impl PrintTask {
                     let days = total_seconds / (24 * 3600);
                     
                     return format!("{:02}-{:02} {:02}:{:02}", 
-                        days % 31 + 1,  // simple month and day display
+                        days % 31 + 1,
                         days % 12 + 1, 
                         hours,
                         minutes);
@@ -42,7 +42,6 @@ impl PrintTask {
         "Pending".to_string()
     }
 
-    // format elapsed time
     pub fn format_elapsed_time(&self) -> String {
         let elapsed = if let Some(start) = self.start_time {
             let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
@@ -58,12 +57,10 @@ impl PrintTask {
         format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
     }
 
-    // format paid amount
     pub fn format_paid_amount(&self) -> String {
-        format!("{:.2} SUI", self.paid_amount as f64 / 1_000_000_000.0)
+        format_sui_balance(self.paid_amount as u128)
     }
 
-    // get short customer address display
     pub fn get_short_customer(&self) -> String {
         if self.customer.len() > 12 {
             format!("{}...{}", &self.customer[0..6], &self.customer[self.customer.len()-6..])
@@ -72,43 +69,18 @@ impl PrintTask {
         }
     }
 
-    // get short sculpt id display
     pub fn get_short_sculpt_id(&self) -> String {
         if self.sculpt_blob_id.len() > 12 {
-            format!("{}...{}", &self.sculpt_blob_id[0..6], &self.sculpt_blob_id[self.sculpt_blob_id.len()-6..]) // TODO: change to 1
+            format!("{}...{}", &self.sculpt_blob_id[0..6], &self.sculpt_blob_id[self.sculpt_blob_id.len()-6..])
         } else {
             self.sculpt_blob_id.clone()
         }
     }
 
-    // TODO: calculate elapsed time
-    // pub fn get_elapsed_time(&self) -> (u64, u64) {
-    //     let current_time = SystemTime::now()
-    //         .duration_since(UNIX_EPOCH)
-    //         .unwrap_or_default()
-    //         .as_secs();
-
-    //     let elapsed_time = self.start_time
-    //         .map(|start| current_time.saturating_sub(start))
-    //         .unwrap_or(0);
-        
-    //     let elapsed_hours = elapsed_time / 3600;
-    //     let elapsed_minutes = (elapsed_time % 3600) / 60;
-
-    //     (elapsed_hours, elapsed_minutes)
-    // }
-
-    // // check if task is active   
-    // pub fn is_active(&self) -> bool {
-    //     matches!(self.status, TaskStatus::Active)
-    // }
-
-    // check if task is completed
     pub fn is_completed(&self) -> bool {
         matches!(self.status, TaskStatus::Completed)
     }
 
-    // Create mock tasks for testing UI
     pub fn new_mock_tasks() -> Vec<PrintTask> {
         vec![
             PrintTask {

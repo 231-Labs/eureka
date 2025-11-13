@@ -272,6 +272,11 @@ fn render_status_toggle(f: &mut Frame, app: &App, area: Rect, primary_color: Col
             format!("Switch to {}? (Y/N)", target_status),
             Style::default().fg(Color::Yellow)
         )
+    } else if app.is_toggling_mode {
+        (
+            "◐ SWITCHING... [Syncing with blockchain]".to_string(),
+            Style::default().fg(Color::Cyan)
+        )
     } else {
         (
             if app.is_online {
@@ -339,6 +344,35 @@ fn render_sculpt_list(
     secondary_color: Color,
     accent_color: Color
 ) {
+    let sculpt_block = Block::default()
+        .title(" MY SCULPTS ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(primary_color));
+
+    // Show loading state if Sculpts are being loaded
+    if app.is_loading_sculpts {
+        let time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let frame = (time % 3) as usize;
+        
+        let loading_text = match frame {
+            0 => "▓ SCANNING KIOSKS... ░",
+            1 => "▒ SCANNING KIOSKS... ▓",
+            _ => "░ SCANNING KIOSKS... ▒",
+        };
+        
+        let loading_para = Paragraph::new(loading_text)
+            .block(sculpt_block)
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(secondary_color));
+        
+        f.render_widget(loading_para, area);
+        return;
+    }
+
     // Offline mode sculpt list
     let sculpt_items: Vec<ListItem> = app.sculpt_items
         .iter()
@@ -349,17 +383,31 @@ fn render_sculpt_list(
         .collect();
         
     let sculpt_list = List::new(sculpt_items)
-        .block(Block::default()
-            .title(" MY SCULPTS ")
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(primary_color)))
+        .block(sculpt_block)
         .highlight_style(Style::default()
             .add_modifier(Modifier::BOLD)
             .fg(secondary_color))
         .highlight_symbol(">> ");
             
     f.render_stateful_widget(sculpt_list, area, &mut app.sculpt_state);
+}
+
+fn wrap_text_to_width(text: &str, width: u16) -> String {
+    let available_width = width.saturating_sub(crate::constants::MESSAGE_AREA_MARGIN);
+    textwrap::wrap(text, available_width as usize).join("\n")
+}
+
+fn create_message_paragraph<'a>(
+    message: &str,
+    area: Rect,
+    color: Color,
+    block: Block<'a>
+) -> Paragraph<'a> {
+    let wrapped_text = wrap_text_to_width(message, area.width);
+    Paragraph::new(wrapped_text)
+        .style(Style::default().fg(color))
+        .alignment(Alignment::Left)
+        .block(block)
 }
 
 fn render_message_area(f: &mut Frame, app: &App, area: Rect, primary_color: Color) {
@@ -370,31 +418,12 @@ fn render_message_area(f: &mut Frame, app: &App, area: Rect, primary_color: Colo
         .border_style(Style::default().fg(primary_color));
 
     if let Some(error) = &app.error_message {
-        // Calculate available width (minus borders and margins)
-        let available_width = area.width.saturating_sub(4);
-        let wrapped_text = textwrap::wrap(error, available_width as usize)
-            .join("\n");
-        
-        let message_text = Paragraph::new(wrapped_text)
-            .style(Style::default().fg(Color::Red))
-            .alignment(Alignment::Left)
-            .block(message_block);
-            
+        let message_text = create_message_paragraph(error, area, Color::Red, message_block);
         f.render_widget(message_text, area);
     } else if let Some(success) = &app.success_message {
-        // Calculate available width (minus borders and margins)
-        let available_width = area.width.saturating_sub(4);
-        let wrapped_text = textwrap::wrap(success, available_width as usize)
-            .join("\n");
-        
-        let message_text = Paragraph::new(wrapped_text)
-            .style(Style::default().fg(Color::Green))
-            .alignment(Alignment::Left)
-            .block(message_block);
-            
+        let message_text = create_message_paragraph(success, area, Color::Green, message_block);
         f.render_widget(message_text, area);
     } else {
-        // Just show the border when no message
         f.render_widget(message_block, area);
     }
 }

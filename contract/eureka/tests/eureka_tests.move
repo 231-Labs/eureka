@@ -33,7 +33,8 @@ module eureka::eureka_tests{
             let mut registry = ts::take_shared<PrinterRegistry>(&scenario);
             let ctx = ts::ctx(&mut scenario);
             
-            register_printer(&mut registry, printer_alias, ctx);
+            let printer_cap = register_printer(&mut registry, printer_alias, ctx);
+            transfer::public_transfer(printer_cap, PRINTER_OWNER);
             
             ts::return_shared(registry);
         };

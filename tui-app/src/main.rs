@@ -12,16 +12,20 @@ use std::{io, time::Duration};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time;
-use app::{MessageType, TaskStatus};
 
 mod app;
 mod constants;
 mod utils;
 mod wallet;
+mod blockchain;
+mod model;
+
+use constants::{PRINT_JOB_POLL_INTERVAL_SECS, RETRY_INTERVAL_SECS, SCULPT_LOAD_DELAY_MILLIS};
 mod ui;
 mod transactions;
+mod seal;
 
-use app::App;
+use app::{App, MessageType, TaskStatus};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -36,6 +40,9 @@ async fn main() -> Result<()> {
 
     // Initialize application state
     let app = Arc::new(Mutex::new(App::new().await?));
+
+    // Start loading Sculpts asynchronously
+    start_sculpt_loading_task(Arc::clone(&app));
 
     // Run application
     let result = run_app(&mut terminal, Arc::clone(&app)).await;
@@ -60,24 +67,20 @@ async fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     app: Arc<Mutex<App>>,
 ) -> Result<()> {
-    // Retry interval
     let mut last_update_time = std::time::Instant::now();
-    let retry_interval = std::time::Duration::from_secs(5); // Retry getting printer ID every 5 seconds
+    let retry_interval = std::time::Duration::from_secs(RETRY_INTERVAL_SECS);
     
-    // Track if printer ID is acquired
     let mut printer_id_acquired = false;
+    let mut sculpt_loading_started = false;
     
-    // 啟動定時檢查 print_job 的任務
     start_print_job_polling(Arc::clone(&app));
     
     loop {
         let app_arc = Arc::clone(&app);
         
-        // Check if printer ID is acquired
         if !printer_id_acquired {
             let should_update = {
                 let app_guard = app_arc.lock().await;
-                // Only update if not registering printer and printer ID is missing
                 !app_guard.is_registering_printer && 
                 app_guard.printer_id == "No Printer ID" && 
                 last_update_time.elapsed() >= retry_interval
@@ -85,15 +88,40 @@ async fn run_app<B: ratatui::backend::Backend>(
             
             if should_update {
                 let mut app_guard = app_arc.lock().await;
-                // Try to update basic info
                 if let Err(e) = app_guard.update_basic_info().await {
                     println!("Failed to update basic info: {}", e);
                 } else if app_guard.printer_id != "No Printer ID" {
-                    // If successfully acquired printer ID, mark as acquired
                     printer_id_acquired = true;
                     println!("Successfully acquired printer ID: {}", app_guard.printer_id);
                 }
                 last_update_time = std::time::Instant::now();
+            }
+        }
+        
+        {
+            let app_guard = app_arc.lock().await;
+            let is_online = app_guard.is_online;
+            drop(app_guard);
+            
+            if is_online {
+                sculpt_loading_started = false;
+            }
+            
+            let should_load = {
+                let app_guard = app_arc.lock().await;
+                app_guard.is_loading_sculpts && app_guard.sculpt_items.is_empty() && !sculpt_loading_started
+            };
+            if should_load {
+                sculpt_loading_started = true;
+                start_sculpt_loading_task(Arc::clone(&app_arc));
+            }
+            
+            let loading_complete = {
+                let app_guard = app_arc.lock().await;
+                !app_guard.is_loading_sculpts && sculpt_loading_started
+            };
+            if loading_complete {
+                sculpt_loading_started = false;
             }
         }
         
@@ -134,10 +162,8 @@ async fn run_app<B: ratatui::backend::Backend>(
                         _ => {}
                     }
                 } else {
-                    // Handle all keys on main page
                     match key.code {
                         KeyCode::Char('q') => {
-                            // Check if app is in online mode before exiting
                             if app_guard.is_online {
                                 app_guard
                                 .set_message
@@ -152,10 +178,11 @@ async fn run_app<B: ratatui::backend::Backend>(
                             terminal.clear()?;
                             return Ok(());
                         },
-                        // Confirmation related keys
                         KeyCode::Char('y') => {
                             if app_guard.is_confirming {
-                                app_guard.confirm_toggle().await?;
+                                app_guard.confirm_toggle_immediate();
+                                drop(app_guard);
+                                start_toggle_task(Arc::clone(&app_arc));
                             } else if app_guard.is_harvesting {
                                 app_guard.confirm_harvest();
                             }
@@ -171,10 +198,8 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 app_guard.start_network_switch();
                             }
                         }
-                        // Feature keys
                         KeyCode::Char('o') => {
                             if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
-                                // check if there is a printing task in online mode
                                 if app_guard.is_online && app_guard.tasks.iter().any(|task| matches!(task.status, TaskStatus::Active)) {
                                     app_guard.set_message(MessageType::Error, "Cannot switch mode while a print job is in progress. Please complete the current job first.".to_string());
                                 } else {
@@ -190,33 +215,19 @@ async fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Char('p') => {
                             if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
                                 if app_guard.is_online {
-                                    // Process print tasks in online mode
                                     App::handle_task_print(Arc::clone(&app_arc), false).await?;
                                 } else {
-                                    // Process local models in offline mode
                                     App::handle_model_selection(Arc::clone(&app_arc), false).await?;
                                 }
                             }
                         }
-                        KeyCode::Char('e') => {
+                        KeyCode::Char('t') => {
                             if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
-                                if let Err(e) = app_guard.run_stop_script().await {
-                                    app_guard.set_message(MessageType::Error, format!("Failed to stop print: {}", e));
-                                }
+                                app_guard.print_output.push("[INFO] Starting mock print mode (T key pressed)".to_string());
+                                drop(app_guard);
+                                App::handle_mock_print_with_printjob(Arc::clone(&app_arc)).await?;
                             }
                         }
-                        KeyCode::Enter => {
-                            if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
-                                if app_guard.is_online {
-                                    // Only download without printing in online mode
-                                    App::handle_task_print(Arc::clone(&app_arc), true).await?;
-                                } else {
-                                    // Only download without printing in offline mode
-                                    App::handle_model_selection(Arc::clone(&app_arc), true).await?;
-                                }
-                            }
-                        }
-                        // Network switch
                         KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3') => {
                             if app_guard.is_switching_network {
                                 let network_index = match key.code {
@@ -226,10 +237,11 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     _ => unreachable!(),
                                 };
                                 app_guard.switch_to_network(network_index);
+                                drop(app_guard);
+                                let mut app_guard = app_arc.lock().await;
                                 app_guard.update_network().await?;
                             }
                         }
-                        // list navigation
                         KeyCode::Up => {
                             app_guard.previous_item();
                         }
@@ -237,7 +249,6 @@ async fn run_app<B: ratatui::backend::Backend>(
                             app_guard.next_item();
                         }
                         _ => {
-                            // clear any messages
                             app_guard.clear_error();
                             app_guard.success_message = None;
                         }
@@ -248,17 +259,64 @@ async fn run_app<B: ratatui::backend::Backend>(
     }
 }
 
-// start polling print job
+fn start_sculpt_loading_task(app: Arc<Mutex<App>>) {
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(SCULPT_LOAD_DELAY_MILLIS)).await;
+        
+        let address = {
+            let app_guard = app.lock().await;
+            app_guard.wallet.get_active_address().await.ok()
+        };
+        
+        if let Some(addr) = address {
+            let sculpts_result = {
+                let app_guard = app.lock().await;
+                let wallet = app_guard.wallet.clone();
+                drop(app_guard);
+                wallet.get_user_sculpt(addr).await
+            };
+            
+            match sculpts_result {
+                Ok(sculpts) => {
+                    let mut app_guard = app.lock().await;
+                    app_guard.sculpt_items = sculpts;
+                    app_guard.is_loading_sculpts = false;
+                }
+                Err(e) => {
+                    let mut app_guard = app.lock().await;
+                    app_guard.sculpt_items = vec![crate::wallet::SculptItem {
+                        alias: format!("Error loading models: {}", e),
+                        blob_id: String::new(),
+                        printed_count: 0,
+                        id: String::new(),
+                        is_encrypted: false,
+                        seal_resource_id: None,
+                    }];
+                    app_guard.is_loading_sculpts = false;
+                }
+            }
+        }
+    });
+}
+
+fn start_toggle_task(app: Arc<Mutex<App>>) {
+    tokio::spawn(async move {
+        let mut app_guard = app.lock().await;
+        if let Err(e) = app_guard.confirm_toggle().await {
+            app_guard.set_message(crate::app::MessageType::Error, format!("Failed to toggle mode: {}", e));
+        }
+    });
+}
+
 fn start_print_job_polling(app: Arc<Mutex<App>>) {
     tokio::spawn(async move {
-        let poll_interval = time::Duration::from_secs(10); // check every 10 seconds
+        let poll_interval = time::Duration::from_secs(PRINT_JOB_POLL_INTERVAL_SECS);
         let mut interval = time::interval(poll_interval);
         
         loop {
             interval.tick().await;
             let mut app_guard = app.lock().await;
             
-            // only check update in online mode when there's no active task
             if app_guard.is_online && app_guard.printer_id != "No Printer ID" {
                 let has_active_task = app_guard.tasks
                 .iter()
