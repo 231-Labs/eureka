@@ -3,6 +3,7 @@ use shared_crypto::intent::Intent;
 use std::{
     path::PathBuf,
     sync::Arc,
+    time::Duration,
 };
 use sui_keys::keystore::{
     AccountKeystore,
@@ -41,6 +42,7 @@ use sui_types::{
         ObjectArg,
     },
 };
+use tokio::time::timeout;
 use crate::{
     constants::{
         GAS_BUDGET,
@@ -64,6 +66,12 @@ impl Default for GasConfig {
     }
 }
 
+/// Transaction execution timeout (30 seconds)
+const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Shared object version fetch timeout (10 seconds)
+const SHARED_OBJECT_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Handles transaction signing and execution
 pub struct TransactionExecutor {
     sui_client: Arc<SuiClient>,
@@ -79,12 +87,16 @@ impl TransactionExecutor {
         }
     }
     
-    /// Get a gas coin for transaction
+    /// Get a gas coin for transaction with timeout
     async fn get_gas_coin(&self) -> Result<SuiObjectRef> {
-        let coins = self.sui_client
+        let coins_future = self.sui_client
             .coin_read_api()
-            .get_coins(self.sender, None, None, None)
-            .await?;
+            .get_coins(self.sender, None, None, None);
+        
+        let coins = timeout(Duration::from_secs(10), coins_future)
+            .await
+            .map_err(|_| anyhow!("Timeout while fetching gas coins"))?
+            .map_err(|e| anyhow!("Failed to fetch gas coins: {}", e))?;
         
         coins.data.into_iter().next()
             .map(|coin| SuiObjectRef {
@@ -95,9 +107,9 @@ impl TransactionExecutor {
             .ok_or_else(|| anyhow!("No available coins found"))
     }
     
-    /// Get the initial shared version of a shared object
+    /// Get the initial shared version of a shared object with timeout
     async fn get_shared_object(&self, object_id: ObjectID) -> Result<u64> {
-        let object = self.sui_client
+        let object_future = self.sui_client
             .read_api()
             .get_object_with_options(object_id, SuiObjectDataOptions {
                 show_owner: true,
@@ -107,8 +119,14 @@ impl TransactionExecutor {
                 show_storage_rebate: false,
                 show_previous_transaction: false,
                 show_type: true,
-            })
-            .await?
+            });
+        
+        let object_response = timeout(SHARED_OBJECT_TIMEOUT, object_future)
+            .await
+            .map_err(|_| anyhow!("Timeout while fetching shared object version"))?
+            .map_err(|e| anyhow!("Failed to fetch shared object: {}", e))?;
+
+        let object = object_response
             .data
             .ok_or_else(|| anyhow!("Object not found"))?;
 
@@ -130,10 +148,16 @@ impl TransactionExecutor {
         // Complete transaction building
         let builder = ptb.finish();
 
-        // Get gas price if not provided
+        // Get gas price if not provided with timeout
         let gas_price = match gas_config.price {
             Some(price) => price,
-            None => self.sui_client.read_api().get_reference_gas_price().await?,
+            None => {
+                let gas_price_future = self.sui_client.read_api().get_reference_gas_price();
+                timeout(Duration::from_secs(10), gas_price_future)
+                    .await
+                    .map_err(|_| anyhow!("Timeout while fetching gas price"))?
+                    .map_err(|e| anyhow!("Failed to fetch gas price: {}", e))?
+            },
         };
 
         // Create transaction data
@@ -148,22 +172,32 @@ impl TransactionExecutor {
         Ok(tx_data)
     }
     
-    /// Sign and execute a transaction
+    /// Sign and execute a transaction with timeout
     async fn sign_and_execute(&self, tx_data: TransactionData) -> Result<SuiTransactionBlockResponse> {
         // Sign transaction
         let keystore_path = PathBuf::from(std::env::var("HOME")?).join(".sui").join("sui_config").join("sui.keystore");
         let keystore = FileBasedKeystore::load_or_create(&keystore_path)?;
-        let signature = keystore.sign_secure(&self.sender, &tx_data, Intent::sui_transaction()).await?;
+        
+        let signature_future = keystore.sign_secure(&self.sender, &tx_data, Intent::sui_transaction());
+        let signature = timeout(Duration::from_secs(5), signature_future)
+            .await
+            .map_err(|_| anyhow!("Timeout while signing transaction"))?
+            .map_err(|e| anyhow!("Failed to sign transaction: {}", e))?;
 
-        // Execute transaction and wait for confirmation
-        let transaction_response = self.sui_client
+        // Execute transaction with timeout
+        // Use WaitForEffectsCert instead of WaitForLocalExecution to avoid long waits
+        let execute_future = self.sui_client
             .quorum_driver_api()
             .execute_transaction_block(
                 Transaction::from_data(tx_data, vec![signature]),
                 SuiTransactionBlockResponseOptions::full_content(),
-                Some(ExecuteTransactionRequestType::WaitForLocalExecution),
-            )
-            .await?;
+                Some(ExecuteTransactionRequestType::WaitForEffectsCert),
+            );
+        
+        let transaction_response = timeout(TRANSACTION_TIMEOUT, execute_future)
+            .await
+            .map_err(|_| anyhow!("Transaction execution timeout after {} seconds", TRANSACTION_TIMEOUT.as_secs()))?
+            .map_err(|e| anyhow!("Transaction execution failed: {}", e))?;
 
         Ok(transaction_response)
     }
@@ -245,37 +279,74 @@ impl TransactionBuilder {
     }
 
     /// Register a printer with the given name
+    /// Retries up to 3 times if shared object version is stale
     pub async fn register_printer(
         &self,
         registry_id: ObjectID,
         printer_name: &str,
     ) -> Result<String> {
-        // Get shared object information
-        let registry_version = self.executor.get_shared_object(registry_id).await?;
+        const MAX_RETRIES: u32 = 3;
+        let mut last_error = None;
         
-        // Create shared object argument
-        let registry_arg = CallArg::Object(ObjectArg::SharedObject {
-            id: registry_id,
-            initial_shared_version: registry_version.into(),
-            mutability: sui_types::transaction::SharedObjectMutability::Mutable,
-        });
+        for attempt in 0..MAX_RETRIES {
+            // Get shared object information with timeout
+            // Fetch version as close to transaction execution as possible
+            let registry_version = match self.executor.get_shared_object(registry_id).await {
+                Ok(version) => version,
+                Err(e) => {
+                    last_error = Some(e);
+                    if attempt < MAX_RETRIES - 1 {
+                        // Wait a bit before retrying
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
+                    return Err(last_error.unwrap());
+                }
+            };
+            
+            // Create shared object argument
+            let registry_arg = CallArg::Object(ObjectArg::SharedObject {
+                id: registry_id,
+                initial_shared_version: registry_version.into(),
+                mutability: sui_types::transaction::SharedObjectMutability::Mutable,
+            });
+            
+            // Create printer name argument
+            let name_bytes = bcs::to_bytes(printer_name)?;
+            let name_arg = CallArg::Pure(name_bytes);
+            
+            // Get package ID
+            let package_id = ObjectID::from_hex_literal(&self.network_state.get_current_package_ids().eureka_package_id)?;
+            
+            // Execute the move call immediately after getting version
+            match self.executor.execute_move_call(
+                package_id,
+                "eureka",
+                "register_printer_and_transfer",
+                vec![],
+                vec![registry_arg, name_arg],
+                None,
+            ).await {
+                Ok(tx_digest) => return Ok(tx_digest),
+                Err(e) => {
+                    let error_msg = e.to_string();
+                    // Check if error is due to stale shared object version
+                    if error_msg.contains("version") || error_msg.contains("stale") || error_msg.contains("SharedObjectSequenceNumberMismatch") {
+                        last_error = Some(e);
+                        if attempt < MAX_RETRIES - 1 {
+                            // Wait a bit before retrying with fresh version
+                            tokio::time::sleep(Duration::from_millis(1000)).await;
+                            continue;
+                        }
+                    } else {
+                        // Non-version related error, return immediately
+                        return Err(e);
+                    }
+                }
+            }
+        }
         
-        // Create printer name argument
-        let name_bytes = bcs::to_bytes(printer_name)?;
-        let name_arg = CallArg::Pure(name_bytes);
-        
-        // Get package ID
-        let package_id = ObjectID::from_hex_literal(&self.network_state.get_current_package_ids().eureka_package_id)?;
-        
-        // Execute the move call
-        self.executor.execute_move_call(
-            package_id,
-            "eureka",
-            "register_printer_and_transfer",
-            vec![],
-            vec![registry_arg, name_arg],
-            None,
-        ).await
+        Err(last_error.unwrap_or_else(|| anyhow!("Failed to register printer after {} attempts", MAX_RETRIES)))
     }
     
     /// validate and create PrinterCap argument

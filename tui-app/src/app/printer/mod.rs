@@ -1,5 +1,5 @@
 mod operations;
-mod ui;
+pub mod ui;
 mod blockchain;
 mod monitoring;
 pub mod mock;

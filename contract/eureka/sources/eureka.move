@@ -496,7 +496,6 @@ module eureka::eureka {
     /// Seal approval entry point for Seal SDK integration
     /// Authorization is verified through PrintJob existence:
     /// - Only sculpt owner can create PrintJob
-    /// - PrintJob creation adds printer to sculpt whitelist
     /// - Therefore, PrintJob existence = authorized decryption access
     entry fun seal_approve(
         _id: vector<u8>,
@@ -520,6 +519,10 @@ module eureka::eureka {
         // Verify PrintJob's printer_id matches this printer
         let job_printer_id = get_print_job_printer_id(print_job);
         assert!(job_printer_id == printer_id, EPrinterIdMismatch);
+        
+        // Note: We cannot directly compare _id (vector<u8>) with seal_resource_id (Option<String>)
+        // in Move, but the Seal SDK should ensure they match when calling this function.
+        // The key derivation should be based ONLY on package_id + _id, not on printer parameters.
     }
 
     /// === Test Only Functions ===

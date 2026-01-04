@@ -3,6 +3,7 @@ use crate::app::{MessageType, RegistrationStatus};
 use anyhow::Result;
 use sui_sdk::types::base_types::ObjectID;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 impl App {
     pub fn start_toggle_confirm(&mut self) {
@@ -107,6 +108,8 @@ impl App {
     }
 
     // printer registration
+    // This method should return quickly to avoid blocking UI event loop
+    // Long-running operations are handled in main.rs via spawn
     pub async fn handle_printer_registration_input(&mut self, input: char) -> Result<()> {
         // If registration was successful, any key should exit
         if matches!(self.registration_status, RegistrationStatus::Success(_)) {
@@ -119,38 +122,12 @@ impl App {
         match input {
             '\n' => {
                 if !self.printer_alias.is_empty() && self.registration_status == RegistrationStatus::Inputting {
+                    // Just set status to submitting and return immediately
+                    // The actual registration will be handled in main.rs via spawn
                     self.registration_status = RegistrationStatus::Submitting;
-                    self.printer_registration_message = "Sending transaction to network...\nPlease wait...".to_string();
-                    
-                    let builder = crate::transactions::TransactionBuilder::new(
-                        Arc::clone(&self.sui_client),
-                        ObjectID::from(self.wallet.get_active_address().await?),
-                        self.network_state.clone()
-                    ).await;
-
-                    self.printer_registration_message = "Transaction sent. Waiting for confirmation...\nThis may take a few seconds...".to_string();
-
-                    match builder.register_printer(
-                        self.network_state.get_current_package_ids().eureka_printer_registry_id.parse()?,
-                        &self.printer_alias
-                    ).await {
-                        Ok(tx_digest) => {
-                            self.registration_status = RegistrationStatus::Success(tx_digest.clone());
-                            self.printer_registration_message = format!(
-                                "Registration Successful!\n\
-                                 Printer Name: {}\n\
-                                 Transaction ID: {}\n\n\
-                                 Press ANY KEY to continue...",
-                                self.printer_alias,
-                                tx_digest
-                            );
-                        }
-                        Err(e) => {
-                            self.error_message = Some(format!("Registration failed: {}", e));
-                            self.registration_status = RegistrationStatus::Failed(e.to_string());
-                            self.printer_registration_message = "Registration failed. Press ESC to exit, or try registering again...".to_string();
-                        }
-                    };
+                    self.printer_registration_message = "Sending transaction to network...\nPlease wait...\n(This may take a few seconds)".to_string();
+                    // Return immediately - registration will be handled in background
+                    return Ok(());
                 }
             }
             '\x08' | '\x7f' => {
@@ -167,4 +144,76 @@ impl App {
         }
         Ok(())
     }
+}
+
+// Start printer registration in background
+// This should be called from main.rs after handle_printer_registration_input returns
+// This function spawns a background task and returns immediately
+pub fn start_printer_registration_background(
+    app: Arc<Mutex<crate::app::App>>,
+) {
+        // Spawn background task to avoid blocking UI event loop
+        tokio::spawn(async move {
+            // Clone necessary data
+            let (sui_client, network_state, printer_alias, registry_id, address) = {
+                let app_guard = app.lock().await;
+                if app_guard.registration_status != RegistrationStatus::Submitting {
+                    return; // Not in submitting state, skip
+                }
+                (
+                    Arc::clone(&app_guard.sui_client),
+                    app_guard.network_state.clone(),
+                    app_guard.printer_alias.clone(),
+                    app_guard.network_state.get_current_package_ids().eureka_printer_registry_id,
+                    match app_guard.wallet.get_active_address().await {
+                        Ok(addr) => addr,
+                        Err(e) => {
+                            eprintln!("Failed to get wallet address: {}", e);
+                            return;
+                        }
+                    },
+                )
+            };
+            
+            let sender = ObjectID::from(address);
+            let app_clone = Arc::clone(&app);
+            
+            // Update message
+            {
+                let mut app_guard = app_clone.lock().await;
+                app_guard.printer_registration_message = "Transaction sent. Waiting for confirmation...\nThis may take a few seconds...\n(Please wait, do not close the terminal)".to_string();
+            }
+            
+            // Create transaction builder
+            let builder = crate::transactions::TransactionBuilder::new(
+                sui_client,
+                sender,
+                network_state.clone()
+            ).await;
+
+            // Execute registration
+            match builder.register_printer(
+                registry_id.parse().unwrap(),
+                &printer_alias
+            ).await {
+                Ok(tx_digest) => {
+                    let mut app_guard = app_clone.lock().await;
+                    app_guard.registration_status = RegistrationStatus::Success(tx_digest.clone());
+                    app_guard.printer_registration_message = format!(
+                        "Registration Successful!\n\
+                         Printer Name: {}\n\
+                         Transaction ID: {}\n\n\
+                         Press ANY KEY to continue...",
+                        printer_alias,
+                        tx_digest
+                    );
+                }
+                Err(e) => {
+                    let mut app_guard = app_clone.lock().await;
+                    app_guard.error_message = Some(format!("Registration failed: {}", e));
+                    app_guard.registration_status = RegistrationStatus::Failed(e.to_string());
+                    app_guard.printer_registration_message = "Registration failed. Press ESC to exit, or try registering again...".to_string();
+                }
+            }
+        });
 } 

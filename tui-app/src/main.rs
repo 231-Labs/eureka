@@ -157,6 +157,15 @@ async fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Enter => {
                             if let Err(e) = app_guard.handle_printer_registration_input('\n').await {
                                 app_guard.error_message = Some(format!("Error: {}", e));
+                            } else {
+                                // Check if we need to start registration in background
+                                if matches!(app_guard.registration_status, crate::app::RegistrationStatus::Submitting) {
+                                    // Start registration in background to avoid blocking UI
+                                    // This prevents PTY disconnection by keeping UI event loop responsive
+                                    // The function spawns internally and returns immediately
+                                    let app_clone = Arc::clone(&app_arc);
+                                    crate::app::printer::ui::start_printer_registration_background(app_clone);
+                                }
                             }
                         }
                         _ => {}

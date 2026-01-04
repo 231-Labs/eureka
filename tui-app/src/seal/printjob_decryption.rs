@@ -14,6 +14,7 @@ use std::str::FromStr;
 use std::path::Path;
 use std::collections::BTreeMap;
 use bcs;
+use crate::constants::EUREKA_TESTNET_PACKAGE_ID;
 
 /// PrintJob-based decryption handler for TUI application
 pub struct PrintJobDecryptor {
@@ -29,8 +30,7 @@ impl PrintJobDecryptor {
         // IMPORTANT: Use EUREKA package ID for BOTH encryption and decryption
         // Seal uses IBE (Identity-Based Encryption) where packageId is the namespace
         // Since seal_approve is in Eureka package, we use Eureka as the namespace
-        let eureka_package_id_str = "0x8852004ffc677790d0ee729aa386286cbcbc7f4f1b4aa87c50213d2acb5d678f";
-        let eureka_package_id: SealObjectID = eureka_package_id_str.parse()?;
+        let eureka_package_id: SealObjectID = EUREKA_TESTNET_PACKAGE_ID.parse()?;
 
         // Connect to Sui testnet
         let sui_client = SuiClientBuilder::default()
@@ -244,7 +244,7 @@ impl PrintJobDecryptor {
         
         let id_hex = resource_id.strip_prefix("0x").unwrap_or(resource_id);
         let id_bytes = hex::decode(id_hex)
-            .map_err(|e| anyhow::anyhow!("Failed to decode hex ID: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to decode hex ID '{}': {}", id_hex, e))?;
         
         // Argument 0: _id (vector<u8>)
         let id_arg = builder.pure(id_bytes)?;
