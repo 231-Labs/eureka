@@ -1,16 +1,16 @@
 use anyhow::Result;
-use sui_sdk::SuiClient;
-use sui_sdk::SuiClientBuilder;
-use sui_sdk::types::base_types::SuiAddress;
-use sui_sdk::wallet_context::WalletContext;
+use std::sync::Arc;
+use sui_sdk_types::Address;
+use sui_rpc::Client as GrpcClient;
+use tokio::sync::Mutex;
+
 use crate::constants::{NETWORKS, NETWORK_PACKAGE_IDS, NetworkPackageIds, SUI_DECIMALS};
+use crate::wallet::load_active_signer;
 use dirs::home_dir;
 
 pub fn shorten_id(id: &str) -> String {
     if id.len() > 16 {
-        // For addresses like 0x598928d17a9a5dadfaffdaca2e5d2315bd2e9387d73c8a63488a1a0f4d73ffbd
-        // Show: 0x598928...4d73ffbd (first 8 chars including 0x, last 8 chars)
-        format!("{}...{}", &id[..10], &id[id.len()-8..])
+        format!("{}...{}", &id[..10], &id[id.len() - 8..])
     } else {
         id.to_string()
     }
@@ -33,7 +33,7 @@ pub struct NetworkState {
 impl NetworkState {
     pub fn new() -> Self {
         NetworkState {
-            current_network: 1  // Default to testnet
+            current_network: 1,
         }
     }
 
@@ -55,19 +55,19 @@ impl NetworkState {
     }
 }
 
-pub async fn setup_for_read(network_state: &NetworkState) -> Result<(SuiClient, SuiAddress)> {
-    let sui = SuiClientBuilder::default()
-        .build(network_state.get_current_rpc())
-        .await?;
-    
+pub async fn setup_for_read(
+    network_state: &NetworkState,
+) -> Result<(Arc<Mutex<GrpcClient>>, Address, sui_crypto::ed25519::Ed25519PrivateKey)> {
+    let url = network_state.get_current_rpc();
+    let client = GrpcClient::new(url).map_err(|e| anyhow::anyhow!("gRPC client: {}", e))?;
+
     let config_path = home_dir()
         .ok_or_else(|| anyhow::anyhow!("Failed to get home directory"))?
         .join(".sui")
         .join("sui_config")
         .join("client.yaml");
-        
-    let mut context = WalletContext::new(&config_path)?;
-    let active_address = context.active_address()?;
-    
-    Ok((sui, active_address))
-} 
+
+    let (address, signer) = load_active_signer(&config_path)?;
+
+    Ok((Arc::new(Mutex::new(client)), address, signer))
+}

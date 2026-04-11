@@ -9,92 +9,92 @@ use tokio::sync::Mutex;
 use std::fs;
 use std::path::Path;
 
-impl App {
-    pub async fn download_3d_model(&mut self, blob_id: &str, seal_resource_id: Option<&str>) -> Result<()> {
-        let url = format!("{}/v1/blobs/{}", AGGREGATOR_URL, blob_id);
-        let current_dir = std::env::current_dir()?;
-        let temp_path = current_dir.join("test.stl");
-        let final_path = current_dir.join("Gcode-Transmit").join("test.stl");
-        
-        self.print_output.push(format!("[LOG] Downloading model from: {}", url));
-        
-        let gcode_dir = current_dir.join("Gcode-Transmit");
-        if !Path::new(&gcode_dir).exists() {
-            self.print_output.push(format!("[LOG] Creating directory: {}", gcode_dir.display()));
-            fs::create_dir_all(&gcode_dir)?;
-        }
-        
-        let status = tokio::process::Command::new("curl")
-            .arg("-s")
-            .arg("-S")
-            .arg(&url)
-            .arg("-o")
-            .arg(&temp_path)
-            .status()
-            .await?;
+/// Download + optional Seal decrypt without holding `App` mutex across I/O.
+async fn download_model_isolated(
+    blob_id: &str,
+    seal_resource_id: Option<&str>,
+    current_rpc: &str,
+) -> Result<Vec<String>> {
+    let mut log = Vec::new();
+    let url = format!("{}/v1/blobs/{}", AGGREGATOR_URL, blob_id);
+    let current_dir = std::env::current_dir()?;
+    let temp_path = current_dir.join("test.stl");
+    let final_path = current_dir.join("Gcode-Transmit").join("test.stl");
 
-        if !status.success() {
-            self.set_message(crate::app::MessageType::Error, "Failed to download 3D model".to_string());
-            return Err(anyhow::anyhow!("Failed to download 3D model"));
-        }
+    log.push(format!("[LOG] Downloading model from: {}", url));
 
-        if let Some(resource_id_str) = seal_resource_id {
-            self.print_output.push("[LOG] 🔐 Encrypted model detected, attempting to decrypt...".to_string());
-            self.print_output.push(format!("[LOG] 🔐 Seal Resource ID: {}", resource_id_str));
-            
-            match self.decrypt_model_file(&temp_path, resource_id_str).await {
-                Ok(_) => {
-                    self.print_output.push("[LOG] ✅ Model decrypted successfully".to_string());
-                }
-                Err(e) => {
-                    self.print_output.push(format!("[LOG] ❌ Decryption failed: {}", e));
-                    self.set_message(crate::app::MessageType::Error, format!("Failed to decrypt model: {}", e));
-                    return Err(anyhow::anyhow!("Failed to decrypt model: {}", e));
-                }
-            }
-        }
-
-        if let Err(e) = fs::rename(&temp_path, &final_path) {
-            self.set_message(crate::app::MessageType::Error, format!("Failed to move 3D model: {}", e));
-            return Err(anyhow::anyhow!("Failed to move 3D model: {}", e));
-        }
-        self.set_message(crate::app::MessageType::Success, "3D model downloaded successfully".to_string());
-        Ok(())
+    let gcode_dir = current_dir.join("Gcode-Transmit");
+    if !Path::new(&gcode_dir).exists() {
+        log.push(format!("[LOG] Creating directory: {}", gcode_dir.display()));
+        fs::create_dir_all(&gcode_dir)?;
     }
 
-    async fn decrypt_model_file(&mut self, file_path: &Path, resource_id_str: &str) -> Result<()> {
-        let seal_metadata = SealResourceMetadata::from_resource_id_string(resource_id_str)?;
-        let encrypted_data = tokio::fs::read(file_path).await?;
-        
-        if !SealDecryptor::is_file_encrypted(&encrypted_data) {
-            self.print_output.push("[LOG] ⚠️  File appears to be unencrypted, skipping decryption".to_string());
-            return Ok(());
-        }
-        
-        let rpc_url = self.network_state.get_current_rpc().to_string();
-        let wallet_config_path = dirs::home_dir()
-            .ok_or_else(|| anyhow::anyhow!("Cannot find home directory"))?
-            .join(".sui")
-            .join("sui_config")
-            .join("client.yaml");
-        
-        self.print_output.push("[LOG] 🔐 Initializing Seal decryption service...".to_string());
-        let decryptor = SealDecryptor::new(rpc_url, wallet_config_path).await?;
-        
-        self.print_output.push(format!("[LOG] 🔐 Decrypting with package_id: {}", seal_metadata.package_id));
-        self.print_output.push(format!("[LOG] 🔐 Resource ID: {}", seal_metadata.resource_id));
-        
-        let decrypted_data = decryptor.decrypt_stl(
+    let status = tokio::process::Command::new("curl")
+        .arg("-s")
+        .arg("-S")
+        .arg(&url)
+        .arg("-o")
+        .arg(&temp_path)
+        .status()
+        .await?;
+
+    if !status.success() {
+        return Err(anyhow::anyhow!("Failed to download 3D model"));
+    }
+
+    if let Some(resource_id_str) = seal_resource_id {
+        log.push("[LOG] 🔐 Encrypted model detected, attempting to decrypt...".to_string());
+        log.push(format!("[LOG] 🔐 Seal Resource ID: {}", resource_id_str));
+        decrypt_model_file_isolated(&temp_path, resource_id_str, current_rpc, &mut log).await?;
+        log.push("[LOG] ✅ Model decrypted successfully".to_string());
+    }
+
+    fs::rename(&temp_path, &final_path).map_err(|e| anyhow::anyhow!("Failed to move 3D model: {}", e))?;
+    Ok(log)
+}
+
+async fn decrypt_model_file_isolated(
+    file_path: &Path,
+    resource_id_str: &str,
+    rpc_url: &str,
+    log: &mut Vec<String>,
+) -> Result<()> {
+    let seal_metadata = SealResourceMetadata::from_resource_id_string(resource_id_str)?;
+    let encrypted_data = tokio::fs::read(file_path).await?;
+
+    if !SealDecryptor::is_file_encrypted(&encrypted_data) {
+        log.push("[LOG] ⚠️  File appears to be unencrypted, skipping decryption".to_string());
+        return Ok(());
+    }
+
+    let wallet_config_path = dirs::home_dir()
+        .ok_or_else(|| anyhow::anyhow!("Cannot find home directory"))?
+        .join(".sui")
+        .join("sui_config")
+        .join("client.yaml");
+
+    log.push("[LOG] 🔐 Initializing Seal decryption service...".to_string());
+    let decryptor = SealDecryptor::new(rpc_url.to_string(), wallet_config_path).await?;
+
+    log.push(format!(
+        "[LOG] 🔐 Decrypting with package_id: {}",
+        seal_metadata.package_id
+    ));
+    log.push(format!("[LOG] 🔐 Resource ID: {}", seal_metadata.resource_id));
+
+    let decrypted_data = decryptor
+        .decrypt_stl(
             encrypted_data,
             &seal_metadata.package_id,
             &seal_metadata.resource_id,
-        ).await?;
-        
-        tokio::fs::write(file_path, decrypted_data).await?;
-        
-        Ok(())
-    }
+        )
+        .await?;
 
+    tokio::fs::write(file_path, decrypted_data).await?;
+    Ok(())
+}
+
+impl App {
     pub async fn handle_model_selection(app: Arc<Mutex<App>>, download_only: bool) -> Result<()> {
         let app_clone = Arc::clone(&app);
         tokio::spawn(async move {
@@ -112,42 +112,51 @@ impl App {
                         app.print_output.push(format!("[LOG] Selected model: {}", item.alias));
                     }
                     
-                    // download model
-                    let download_result = {
-                        let mut app = app_clone.lock().await;
-                        app.download_3d_model(&item.blob_id, item.seal_resource_id.as_deref()).await
+                    let rpc = {
+                        let g = app_clone.lock().await;
+                        g.network_state.get_current_rpc().to_string()
                     };
-
-                    // process download result
-                    if let Err(e) = download_result {
-                        let mut app = app_clone.lock().await;
-                        app.set_message(crate::app::MessageType::Error, format!("Failed to download model: {}", e));
-                        return;
+                    match download_model_isolated(
+                        &item.blob_id,
+                        item.seal_resource_id.as_deref(),
+                        &rpc,
+                    )
+                    .await
+                    {
+                        Ok(mut lines) => {
+                            let mut app = app_clone.lock().await;
+                            app.print_output.append(&mut lines);
+                            app.set_message(
+                                crate::app::MessageType::Success,
+                                "3D model downloaded successfully".to_string(),
+                            );
+                        }
+                        Err(e) => {
+                            let mut app = app_clone.lock().await;
+                            app.set_message(
+                                crate::app::MessageType::Error,
+                                format!("Failed to download model: {}", e),
+                            );
+                            return;
+                        }
                     }
 
                     // run print script (not only download)
                     if !download_only {
-                        {
-                            let mut app = app_clone.lock().await;
-                            
-                            if app.printer_id != "No Printer ID" {
-                                app.print_output.push("[LOG] Creating print job on blockchain...".to_string());
-                                
-                                match app.test_create_print_job().await {
-                                    Ok(_) => {
-                                        app.print_output.push("[LOG] Print job created on blockchain successfully".to_string());
-                                        app.set_message(crate::app::MessageType::Success, "Print job created on blockchain successfully".to_string());
-                                    },
-                                    Err(e) => {
-                                        if e.contains("A print job already exists") {
-                                            app.print_output.push("[LOG] A print job already exists, continuing with printing...".to_string());
-                                        } else {
-                                            app.print_output.push(format!("[LOG] Failed to create print job on blockchain: {}", e));
-                                            app.set_message(crate::app::MessageType::Error, format!("Failed to create print job: {}", e));
-                                        }
-                                    }
-                                }
+                        let has_printer = {
+                            let g = app_clone.lock().await;
+                            g.printer_id != "No Printer ID"
+                        };
+                        if has_printer {
+                            {
+                                let mut g = app_clone.lock().await;
+                                g.print_output
+                                    .push("[LOG] Creating print job on blockchain...".to_string());
                             }
+                            let _ = crate::app::printer::blockchain::run_create_print_job_from_selection(
+                                Arc::clone(&app_clone),
+                            )
+                            .await;
                         }
                         
                         {
@@ -195,15 +204,27 @@ impl App {
                     app.set_message(crate::app::MessageType::Info, format!("Processing print job: {}", task.name));
                 }
                 
-                let download_result = {
-                    let mut app = app_clone.lock().await;
-                    app.download_3d_model(&task.sculpt_structure, None).await
+                let rpc = {
+                    let g = app_clone.lock().await;
+                    g.network_state.get_current_rpc().to_string()
                 };
-
-                if let Err(e) = download_result {
-                    let mut app = app_clone.lock().await;
-                    app.set_message(crate::app::MessageType::Error, format!("Failed to download task model: {}", e));
-                    return;
+                match download_model_isolated(&task.sculpt_structure, None, &rpc).await {
+                    Ok(mut lines) => {
+                        let mut app = app_clone.lock().await;
+                        app.print_output.append(&mut lines);
+                        app.set_message(
+                            crate::app::MessageType::Success,
+                            "3D model downloaded successfully".to_string(),
+                        );
+                    }
+                    Err(e) => {
+                        let mut app = app_clone.lock().await;
+                        app.set_message(
+                            crate::app::MessageType::Error,
+                            format!("Failed to download task model: {}", e),
+                        );
+                        return;
+                    }
                 }
 
                 if !download_only {
@@ -262,24 +283,14 @@ impl App {
                 // Get printer information from app state
                 let (printer_id_str, wallet_address) = {
                     let app_guard = app_clone.lock().await;
-                    let wallet_addr = app_guard.wallet.get_active_address().await.ok();
-                    (app_guard.printer_id.clone(), wallet_addr)
+                    (app_guard.printer_id.clone(), app_guard.wallet.address)
                 };
 
-                if printer_id_str == "No Printer ID" {
+                if printer_id_str.as_str() == "No Printer ID" {
                     let mut app = app_clone.lock().await;
                     app.set_message(crate::app::MessageType::Error, "Printer ID not available".to_string());
                     return;
                 }
-
-                let wallet_address = match wallet_address {
-                    Some(addr) => addr,
-                    None => {
-                        let mut app = app_clone.lock().await;
-                        app.set_message(crate::app::MessageType::Error, "Failed to get wallet address".to_string());
-                        return;
-                    }
-                };
 
                 // Get printer cap ID from wallet
                 let printer_cap_id_str = {
@@ -406,10 +417,10 @@ impl App {
                                 }
 
                                 // Directly call PrintJob completion using PrintJob context (not sculpt selection)
-                                let completion_result = {
-                                    let mut app = app_clone.lock().await;
-                                    app.test_complete_print_job_from_task(&task).await
-                                };
+                                let completion_result = crate::app::printer::blockchain::run_transfer_completed_print_job(
+                                    Arc::clone(&app_clone),
+                                )
+                                .await;
 
                                 match completion_result {
                                     Ok(_) => {

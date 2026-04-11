@@ -153,21 +153,29 @@ impl App {
         }
         
         {
-            let mut app_guard = app.lock().await;
-            
-            if app_guard.printer_id.eq("No Printer ID") {
-                drop(app_guard);
-            } else {
-                let selected_index = app_guard.sculpt_state.selected();
-                if selected_index.is_none() || selected_index.unwrap() >= app_guard.sculpt_items
-                .len()
-                { drop(app_guard) }
-                else {
-                    match app_guard.test_start_print_job().await {
-                        Err(e) => app_guard.print_output
-                        .push(format!("[INFO] Failed to start print job on blockchain: {}", e)),
-                        Ok(_) => app_guard.print_output
-                        .push("[INFO] Print job started on blockchain successfully".to_string()),
+            let app_guard = app.lock().await;
+            let printer_ok = !app_guard.printer_id.eq("No Printer ID");
+            let selected_ok = app_guard
+                .sculpt_state
+                .selected()
+                .map(|i| i < app_guard.sculpt_items.len())
+                .unwrap_or(false);
+            drop(app_guard);
+
+            if printer_ok && selected_ok {
+                match super::blockchain::run_start_print_job_from_selection(Arc::clone(&app)).await {
+                    Err(e) => {
+                        let mut ag = app.lock().await;
+                        ag.print_output.push(format!(
+                            "[INFO] Failed to start print job on blockchain: {}",
+                            e
+                        ));
+                    }
+                    Ok(()) => {
+                        let mut ag = app.lock().await;
+                        ag.print_output.push(
+                            "[INFO] Print job started on blockchain successfully".to_string(),
+                        );
                     }
                 }
             }
@@ -363,19 +371,23 @@ impl App {
     }
 
     pub async fn update_blockchain_on_completion(app_clone: Arc<Mutex<App>>) {
-        let mut completion_app = app_clone.lock().await;
-        
-        match completion_app.test_complete_print_job().await {
-            Ok(_) => {
-                completion_app.print_output
+        match super::blockchain::run_complete_print_job_from_sculpt_selection(Arc::clone(&app_clone))
+            .await
+        {
+            Ok(()) => {
+                let mut g = app_clone.lock().await;
+                g.print_output
                     .push("[INFO] Print job completed successfully on blockchain".to_string());
             }
             Err(e) => {
-                completion_app.print_output
-                    .push(format!("[WARNING] Failed to complete print job on blockchain: {}", e));
-                completion_app.set_message(
-                    MessageType::Error, 
-                    format!("Print completed locally but failed to update blockchain: {}", e)
+                let mut g = app_clone.lock().await;
+                g.print_output.push(format!(
+                    "[WARNING] Failed to complete print job on blockchain: {}",
+                    e
+                ));
+                g.set_message(
+                    MessageType::Error,
+                    format!("Print completed locally but failed to update blockchain: {}", e),
                 );
             }
         }

@@ -1,12 +1,11 @@
 use anyhow::Result;
-use sui_sdk::types::base_types::SuiAddress;
+use sui_sdk_types::Address;
 
 use super::client::Wallet;
 use super::types::SculptItem;
 
 impl Wallet {
-    /// Get user's sculpt (3D model) items from all Kiosks
-    pub async fn get_user_sculpt(&self, address: SuiAddress) -> Result<Vec<SculptItem>> {
+    pub async fn get_user_sculpt(&self, address: Address) -> Result<Vec<SculptItem>> {
         let sculpts = self.get_all_kiosk_sculpts(address).await?;
 
         Ok(if sculpts.is_empty() {

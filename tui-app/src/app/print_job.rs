@@ -80,31 +80,4 @@ impl PrintTask {
     pub fn is_completed(&self) -> bool {
         matches!(self.status, TaskStatus::Completed)
     }
-
-    pub fn new_mock_tasks() -> Vec<PrintTask> {
-        vec![
-            PrintTask {
-                id: "0x123456789abcdef123456789abcdef".to_string(),
-                name: "Cool Vase".to_string(),
-                sculpt_blob_id: "0xabcdef123456789abcdef123456789a".to_string(),
-                sculpt_structure: "STL".to_string(),
-                customer: "0xabc123def456abc123def456abc123de".to_string(),
-                paid_amount: 1500000000, // 1.5 SUI
-                start_time: Some(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() - 3600),
-                end_time: Some(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() - 600),
-                status: TaskStatus::Completed,
-            },
-            PrintTask {
-                id: "0x987654321fedcba987654321fedcba".to_string(),
-                name: "Cute Robot".to_string(),
-                sculpt_blob_id: "0xfedcba987654321fedcba98765432".to_string(),
-                sculpt_structure: "STL".to_string(),
-                customer: "0xabc123def456abc123def456abc123de".to_string(),
-                paid_amount: 2000000000, // 2.0 SUI
-                start_time: Some(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() - 7200),
-                end_time: Some(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() - 1800),
-                status: TaskStatus::Completed,
-            },
-        ]
-    }
 } 

@@ -51,8 +51,9 @@ pub const NETWORK_PACKAGE_IDS: [NetworkPackageIds; 3] = [
     },
 ];
 
+/// gRPC (HTTP/2 + TLS) endpoints for `sui_rpc::Client` (same hosts as public full nodes).
 pub const NETWORKS: [(&str, &str); 3] = [
-    ("devnet", "https://fullnode.devnet.sui.io:443"),
-    ("testnet", "https://fullnode.testnet.sui.io:443"),
-    ("mainnet", "https://fullnode.mainnet.sui.io:443"),
+    ("devnet", sui_rpc::Client::DEVNET_FULLNODE),
+    ("testnet", sui_rpc::Client::TESTNET_FULLNODE),
+    ("mainnet", sui_rpc::Client::MAINNET_FULLNODE),
 ];

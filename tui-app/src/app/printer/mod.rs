@@ -1,5 +1,5 @@
 mod operations;
 pub mod ui;
-mod blockchain;
+pub(crate) mod blockchain;
 mod monitoring;
 pub mod mock;
