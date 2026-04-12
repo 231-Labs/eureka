@@ -1,5 +1,5 @@
-//! 驗證 `ListDynamicFields` 的 `read_mask` 路徑（須相對於 `DynamicField`，不可使用 `dynamic_fields.*`）。
-//! `cargo run -p tui-app --example grpc_inspect_dynamic_fields -- <PARENT_OBJECT_ID>`
+//! Verify `ListDynamicFields` `read_mask` paths (relative to `DynamicField`, not `dynamic_fields.*`).
+//! Run: `cargo run -p tui-app --example grpc_inspect_dynamic_fields -- <PARENT_OBJECT_ID>`
 
 use anyhow::Result;
 use futures::TryStreamExt;

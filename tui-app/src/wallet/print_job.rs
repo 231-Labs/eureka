@@ -19,7 +19,7 @@ impl Wallet {
         let list_req = ListDynamicFieldsRequest::default()
             .with_parent(printer_aid.to_string())
             .with_page_size(200)
-            // 路徑相對於 `DynamicField`（不可 `dynamic_fields.*`）。保留 field_object.object_id 作為與 kiosk 相同的後備。
+            // Paths are relative to `DynamicField` (not `dynamic_fields.*`). Include field_object.object_id as kiosk-style fallback.
             .with_read_mask(read_mask("child_id,field_object.object_id"));
 
         let stream = client.list_dynamic_fields(list_req);

@@ -1,19 +1,22 @@
 use crate::app::core::App;
 use crate::constants::AGGREGATOR_URL;
-use crate::seal::{SealDecryptor, PrintJobDecryptor};
-use crate::seal::types::SealResourceMetadata;
+use crate::seal::{PrintJobDecryptor, SealDecryptor};
 use crate::app::printer::mock::{run_mock_print_script, MockPrintScriptResult};
 use anyhow::Result;
+use seal_sdk_rs::native_sui_sdk::sui_types::base_types::ObjectID as SuiObjectID;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::fs;
 use std::path::Path;
 
-/// Download + optional Seal decrypt without holding `App` mutex across I/O.
+/// Download plus optional Seal decrypt (only via `eureka::seal_approve` + PrintJob, matching on-chain rules).
 async fn download_model_isolated(
     blob_id: &str,
     seal_resource_id: Option<&str>,
     current_rpc: &str,
+    eureka_package_id: &str,
+    // Required for encrypted models: (printer_object_id, printer_cap_object_id)
+    printer_for_seal: Option<(String, String)>,
 ) -> Result<Vec<String>> {
     let mut log = Vec::new();
     let url = format!("{}/v1/blobs/{}", AGGREGATOR_URL, blob_id);
@@ -43,9 +46,23 @@ async fn download_model_isolated(
     }
 
     if let Some(resource_id_str) = seal_resource_id {
-        log.push("[LOG] 🔐 Encrypted model detected, attempting to decrypt...".to_string());
-        log.push(format!("[LOG] 🔐 Seal Resource ID: {}", resource_id_str));
-        decrypt_model_file_isolated(&temp_path, resource_id_str, current_rpc, &mut log).await?;
+        log.push("[LOG] 🔐 Encrypted model: decrypting via PrintJob + eureka::seal_approve...".to_string());
+        log.push(format!("[LOG] 🔐 seal_resource_id: {}", resource_id_str));
+        let (printer_id, cap_id) = printer_for_seal.ok_or_else(|| {
+            anyhow::anyhow!(
+                "Encrypted models need a registered printer and an on-chain PrintJob; create a print job from your selection before downloading."
+            )
+        })?;
+        decrypt_model_with_printjob(
+            &temp_path,
+            resource_id_str,
+            current_rpc,
+            eureka_package_id,
+            &printer_id,
+            &cap_id,
+            &mut log,
+        )
+        .await?;
         log.push("[LOG] ✅ Model decrypted successfully".to_string());
     }
 
@@ -53,44 +70,35 @@ async fn download_model_isolated(
     Ok(log)
 }
 
-async fn decrypt_model_file_isolated(
+async fn decrypt_model_with_printjob(
     file_path: &Path,
-    resource_id_str: &str,
+    seal_resource_id: &str,
     rpc_url: &str,
+    eureka_package_id: &str,
+    printer_id: &str,
+    printer_cap_id: &str,
     log: &mut Vec<String>,
 ) -> Result<()> {
-    let seal_metadata = SealResourceMetadata::from_resource_id_string(resource_id_str)?;
     let encrypted_data = tokio::fs::read(file_path).await?;
 
     if !SealDecryptor::is_file_encrypted(&encrypted_data) {
-        log.push("[LOG] ⚠️  File appears to be unencrypted, skipping decryption".to_string());
+        log.push("[LOG] ⚠️  File looks like plaintext STL; skipping decryption".to_string());
         return Ok(());
     }
 
-    let wallet_config_path = dirs::home_dir()
-        .ok_or_else(|| anyhow::anyhow!("Cannot find home directory"))?
-        .join(".sui")
-        .join("sui_config")
-        .join("client.yaml");
+    log.push("[LOG] 🔐 Initializing PrintJobDecryptor (Seal SDK + JSON-RPC)...".to_string());
+    let decryptor = PrintJobDecryptor::new(rpc_url.to_string(), eureka_package_id).await?;
 
-    log.push("[LOG] 🔐 Initializing Seal decryption service...".to_string());
-    let decryptor = SealDecryptor::new(rpc_url.to_string(), wallet_config_path).await?;
+    let printer_oid =
+        SuiObjectID::from_hex_literal(printer_id).map_err(|e| anyhow::anyhow!("printer_id: {}", e))?;
+    let cap_oid = SuiObjectID::from_hex_literal(printer_cap_id)
+        .map_err(|e| anyhow::anyhow!("printer_cap_id: {}", e))?;
 
-    log.push(format!(
-        "[LOG] 🔐 Decrypting with package_id: {}",
-        seal_metadata.package_id
-    ));
-    log.push(format!("[LOG] 🔐 Resource ID: {}", seal_metadata.resource_id));
-
-    let decrypted_data = decryptor
-        .decrypt_stl(
-            encrypted_data,
-            &seal_metadata.package_id,
-            &seal_metadata.resource_id,
-        )
+    let decrypted = decryptor
+        .decrypt_sealed_file_bytes(seal_resource_id, &encrypted_data, printer_oid, cap_oid)
         .await?;
 
-    tokio::fs::write(file_path, decrypted_data).await?;
+    tokio::fs::write(file_path, decrypted).await?;
     Ok(())
 }
 
@@ -111,15 +119,84 @@ impl App {
                         let mut app = app_clone.lock().await;
                         app.print_output.push(format!("[LOG] Selected model: {}", item.alias));
                     }
-                    
-                    let rpc = {
+
+                    let seal = item.seal_resource_id.as_deref();
+                    let (rpc, eureka_pkg) = {
                         let g = app_clone.lock().await;
-                        g.network_state.get_current_rpc().to_string()
+                        (
+                            g.network_state.get_current_rpc().to_string(),
+                            g.network_state
+                                .get_current_package_ids()
+                                .eureka_package_id
+                                .to_string(),
+                        )
                     };
+
+                    // `eureka::seal_approve` requires a PrintJob on the printer; create it before download/decrypt.
+                    let printer_for_seal: Option<(String, String)> = if seal.is_some() {
+                        let has_printer = {
+                            let g = app_clone.lock().await;
+                            g.printer_id != "No Printer ID"
+                        };
+                        if !has_printer {
+                            let mut app = app_clone.lock().await;
+                            app.set_message(
+                                crate::app::MessageType::Error,
+                                "Encrypted models require a registered printer. Complete printer registration first."
+                                    .to_string(),
+                            );
+                            return;
+                        }
+                        {
+                            let mut g = app_clone.lock().await;
+                            g.print_output.push(
+                                "[LOG] Encrypted model: creating on-chain PrintJob first (required for seal_approve)…"
+                                    .to_string(),
+                            );
+                        }
+                        if let Err(e) =
+                            crate::app::printer::blockchain::run_create_print_job_from_selection(
+                                Arc::clone(&app_clone),
+                            )
+                            .await
+                        {
+                            let mut app = app_clone.lock().await;
+                            app.set_message(
+                                crate::app::MessageType::Error,
+                                format!("Could not create PrintJob; cannot decrypt: {}", e),
+                            );
+                            return;
+                        }
+                        let wallet_address = { let g = app_clone.lock().await; g.wallet.address };
+                        let printer_id = { let g = app_clone.lock().await; g.printer_id.clone() };
+                        let cap_id = match app_clone
+                            .lock()
+                            .await
+                            .wallet
+                            .get_printer_cap_id(wallet_address)
+                            .await
+                        {
+                            Ok(c) => c,
+                            Err(e) => {
+                                let mut app = app_clone.lock().await;
+                                app.set_message(
+                                    crate::app::MessageType::Error,
+                                    format!("Could not load PrinterCap: {}", e),
+                                );
+                                return;
+                            }
+                        };
+                        Some((printer_id, cap_id))
+                    } else {
+                        None
+                    };
+
                     match download_model_isolated(
                         &item.blob_id,
-                        item.seal_resource_id.as_deref(),
+                        seal,
                         &rpc,
+                        &eureka_pkg,
+                        printer_for_seal,
                     )
                     .await
                     {
@@ -147,7 +224,7 @@ impl App {
                             let g = app_clone.lock().await;
                             g.printer_id != "No Printer ID"
                         };
-                        if has_printer {
+                        if has_printer && seal.is_none() {
                             {
                                 let mut g = app_clone.lock().await;
                                 g.print_output
@@ -204,11 +281,63 @@ impl App {
                     app.set_message(crate::app::MessageType::Info, format!("Processing print job: {}", task.name));
                 }
                 
-                let rpc = {
+                let seal = task.seal_resource_id.as_deref();
+                let (rpc, eureka_pkg) = {
                     let g = app_clone.lock().await;
-                    g.network_state.get_current_rpc().to_string()
+                    (
+                        g.network_state.get_current_rpc().to_string(),
+                        g.network_state
+                            .get_current_package_ids()
+                            .eureka_package_id
+                            .to_string(),
+                    )
                 };
-                match download_model_isolated(&task.sculpt_structure, None, &rpc).await {
+
+                let printer_for_seal: Option<(String, String)> = if seal.is_some() {
+                    let (wallet_address, printer_id) = {
+                        let g = app_clone.lock().await;
+                        if g.printer_id == "No Printer ID" {
+                            drop(g);
+                            let mut app = app_clone.lock().await;
+                            app.set_message(
+                                crate::app::MessageType::Error,
+                                "This task uses an encrypted model; a connected printer is required.".to_string(),
+                            );
+                            return;
+                        }
+                        (g.wallet.address, g.printer_id.clone())
+                    };
+                    let cap_id = match app_clone
+                        .lock()
+                        .await
+                        .wallet
+                        .get_printer_cap_id(wallet_address)
+                        .await
+                    {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let mut app = app_clone.lock().await;
+                            app.set_message(
+                                crate::app::MessageType::Error,
+                                format!("Could not load PrinterCap: {}", e),
+                            );
+                            return;
+                        }
+                    };
+                    Some((printer_id, cap_id))
+                } else {
+                    None
+                };
+
+                match download_model_isolated(
+                    &task.sculpt_structure,
+                    seal,
+                    &rpc,
+                    &eureka_pkg,
+                    printer_for_seal,
+                )
+                .await
+                {
                     Ok(mut lines) => {
                         let mut app = app_clone.lock().await;
                         app.print_output.append(&mut lines);
@@ -325,8 +454,20 @@ impl App {
                     }
                 };
 
+                let (rpc, eureka_pkg) = {
+                    let app_guard = app_clone.lock().await;
+                    (
+                        app_guard.network_state.get_current_rpc().to_string(),
+                        app_guard
+                            .network_state
+                            .get_current_package_ids()
+                            .eureka_package_id
+                            .to_string(),
+                    )
+                };
+
                 // Create PrintJob decryptor and perform decryption
-                let decryption_result = match PrintJobDecryptor::new().await {
+                let decryption_result = match PrintJobDecryptor::new(rpc, &eureka_pkg).await {
                     Ok(decryptor) => {
                         {
                             let mut app = app_clone.lock().await;

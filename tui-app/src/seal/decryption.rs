@@ -178,7 +178,7 @@ mod tests {
 
     #[test]
     fn test_is_file_encrypted_encrypted_data() {
-        let encrypted_data = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00]; // 隨機數據
+        let encrypted_data = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00]; // random-looking bytes
         assert!(SealDecryptor::is_file_encrypted(&encrypted_data));
     }
 }

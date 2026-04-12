@@ -1,6 +1,6 @@
-//! 對 testnet gRPC 呼叫 `ListOwnedObjects`，印出 PrinterCap 的 `Object.json` 實際形狀（除錯用）。
+//! Call testnet gRPC `ListOwnedObjects` and print real `Object.json` for PrinterCap (debug).
 //!
-//! 執行：`cargo run -p tui-app --example grpc_inspect_printer_cap -- [OWNER_HEX]`
+//! Run: `cargo run -p tui-app --example grpc_inspect_printer_cap -- [OWNER_HEX]`
 
 use anyhow::Result;
 use futures::TryStreamExt;
@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
 
     println!("owner={owner}\nobject_type filter={cap_type}\n");
 
-    println!("=== A) read_mask \"json,object_id\"（與 printer.rs 相同）===\n");
+    println!("=== A) read_mask \"json,object_id\" (same as printer.rs) ===\n");
     let req = ListOwnedObjectsRequest::default()
         .with_owner(owner.clone())
         .with_object_type(cap_type.clone())
@@ -71,10 +71,10 @@ async fn main() -> Result<()> {
         }
     }
     if n == 0 {
-        println!("(此條件下 0 筆 — 可能 object_type 與節點索引不一致)\n");
+        println!("(0 objects for this filter — object_type may not match node index)\n");
     }
 
-    println!("\n=== B) 不加 read_mask（看節點預設回哪些欄位）===\n");
+    println!("\n=== B) No read_mask (see node default fields) ===\n");
     let req2 = ListOwnedObjectsRequest::default()
         .with_owner(owner.clone())
         .with_object_type(cap_type)
@@ -94,7 +94,7 @@ async fn main() -> Result<()> {
             }
         }
     } else {
-        println!("(仍為 0 筆)");
+        println!("(still 0 objects)");
     }
 
     Ok(())

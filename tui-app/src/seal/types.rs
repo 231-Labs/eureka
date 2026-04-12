@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-/// Seal 加密資源的元數據
+/// Metadata for a Seal-encrypted resource
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SealResourceMetadata {
     pub package_id: String,
@@ -19,7 +19,7 @@ impl SealResourceMetadata {
         }
     }
 
-    /// 從 resource_id 字符串解析 (格式: "packageId:id")
+    /// Parse from resource id string (format: "packageId:id")
     pub fn from_resource_id_string(resource_id_str: &str) -> Result<Self> {
         let parts: Vec<&str> = resource_id_str.split(':').collect();
         if parts.len() != 2 {
@@ -34,7 +34,7 @@ impl SealResourceMetadata {
     }
 }
 
-/// Sculpt 擴展，包含 Seal 加密信息
+/// Sculpt extension including Seal encryption info
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct SculptWithSeal {

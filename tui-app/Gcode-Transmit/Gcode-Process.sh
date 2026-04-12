@@ -27,15 +27,15 @@ elif [ "$Options_control" == "--stop" ]; then
 
 elif [ "$Options_control" == "--help" ]; then
 
-  echo "用法：Gcode-Process.sh [選項]"
+  echo "Usage: Gcode-Process.sh [option]"
   echo ""
-  echo "可用選項："
-  echo "  --print    傳送 G-code 指令"
-  echo "  --stop     停止 G-code 傳送"
-  echo "  --help     顯示說明"
+  echo "Options:"
+  echo "  --print    Send G-code to the printer"
+  echo "  --stop     Stop G-code transfer"
+  echo "  --help     Show this help"
 
 else
 
-  echo "$Options_control is not Gcode-Process comment pless use '--help'"
+  echo "$Options_control is not a valid Gcode-Process option; use '--help'"
 
 fi

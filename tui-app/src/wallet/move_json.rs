@@ -54,8 +54,8 @@ fn move_fields_map_inner(root: &Json, depth: u8) -> Option<Map<String, Json>> {
         }
     }
 
-    // Sui gRPC `Object.json` 常把 Move struct 欄位直接放在頂層（例如 `id`、`printer_id` 字串），
-    // 沒有 JSON-RPC 那種 `data.content.fields` 包裝；先前僅辨識 `fields` 時會得到 None 而永遠抓不到 PrinterCap。
+    // Sui gRPC `Object.json` often puts Move struct fields at the top level (e.g. `id`, `printer_id` strings)
+    // without JSON-RPC-style `data.content.fields` wrapping; only looking for `fields` used to yield None and miss PrinterCap.
     if m.get("fields").is_none() && m.contains_key("id") && !m.contains_key("dataType") {
         return Some(m.clone());
     }
@@ -141,7 +141,7 @@ pub fn json_bool(v: &Json) -> Option<bool> {
     v.as_bool()
 }
 
-/// `0x2::object::UID`：常見為 `{ "id": "0x..." }` 或帶 `type`/`fields` 的巢狀 JSON。
+/// `0x2::object::UID` often appears as `{ "id": "0x..." }` or nested JSON with `type` / `fields`.
 pub fn extract_id_from_fields(fields: &Map<String, Json>) -> Option<String> {
     let idv = fields.get("id")?;
     json_object_id_value(idv, 8)
@@ -158,7 +158,7 @@ fn normalize_hex_id(s: &str) -> Option<String> {
     }
 }
 
-/// gRPC／索引器常把 `ID` / `UID` 序列化成 `{ "fields": { "bytes" | "id": ... } }` 或巢狀 `id` 物件；此函式統一解出 0x 位址字串。
+/// gRPC/indexers often serialize `ID`/`UID` as `{ "fields": { "bytes" | "id": ... } }` or nested `id` objects; this resolves a 0x address string.
 fn json_object_id_value(v: &Json, depth: u8) -> Option<String> {
     if depth == 0 {
         return None;
@@ -227,6 +227,20 @@ pub fn extract_bool_field(fields: &Map<String, Json>, name: &str) -> Option<bool
     fields.get(name).and_then(json_bool)
 }
 
+/// Move `option::Option<String>` JSON shapes: `null`, `{ "Some": "..." }`, or a plain string.
+pub fn extract_optional_string_field(fields: &Map<String, Json>, name: &str) -> Option<String> {
+    let v = fields.get(name)?;
+    match v {
+        Json::Null => None,
+        Json::String(s) if !s.is_empty() => Some(s.clone()),
+        Json::Object(o) => match o.get("Some") {
+            Some(Json::String(s)) if !s.is_empty() => Some(s.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 pub fn extract_optional_u64_field(fields: &Map<String, Json>, name: &str) -> Option<u64> {
     match fields.get(name)? {
         Json::Null => None,
@@ -256,6 +270,7 @@ pub fn extract_print_task_from_object_json(root: &Json) -> Result<crate::app::pr
         extract_bool_field(&fields, "is_completed").ok_or_else(|| anyhow!("is_completed"))?;
     let start_time = extract_optional_u64_field(&fields, "start_time");
     let end_time = extract_optional_u64_field(&fields, "end_time");
+    let seal_resource_id = extract_optional_string_field(&fields, "seal_resource_id");
 
     Ok(PrintTask {
         id,
@@ -266,6 +281,7 @@ pub fn extract_print_task_from_object_json(root: &Json) -> Result<crate::app::pr
         paid_amount,
         start_time,
         end_time,
+        seal_resource_id,
         status: if is_completed {
             TaskStatus::Completed
         } else {

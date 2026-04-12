@@ -13,6 +13,8 @@ pub struct PrintTask {
     pub name: String,
     pub sculpt_blob_id: String,
     pub sculpt_structure: String,
+    /// Seal resource id (matches on-chain `PrintJob.seal_resource_id`); required to decrypt encrypted models.
+    pub seal_resource_id: Option<String>,
     pub customer: String,
     pub paid_amount: u64,
     pub start_time: Option<u64>,

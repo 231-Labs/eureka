@@ -35,11 +35,11 @@ impl Wallet {
         let current_package_id = self.network_state.get_current_package_ids().eureka_package_id;
         if current_package_id.is_empty() {
             return Err(anyhow!(
-                "此網路尚未設定 Eureka 套件 ID（例如 mainnet）。請在網路選單改用 devnet／testnet，或於 constants 補上套件 ID。"
+                "Eureka package ID is not set for this network (e.g. mainnet). Switch to devnet/testnet in the network menu or add an ID in constants."
             ));
         }
 
-        // 與鏈上 object_type 的 canonical 位址字串對齊，避免 gRPC 篩選與常數字串不一致而漏物件。
+        // Align object_type filter with canonical on-chain address strings so gRPC filtering matches constants.
         let printer_cap_type = current_package_id
             .parse::<Address>()
             .map(|a| format!("{}::eureka::PrinterCap", a))
@@ -49,7 +49,7 @@ impl Wallet {
 
         {
             let client = self.rpc.lock().await;
-            // page_size = 每頁 RPC 筆數；list_owned_objects 串流會自動帶 page_token 翻頁，直到掃完所有符合條件的物件。
+            // page_size is per RPC page; list_owned_objects stream follows page_token until all matching objects are read.
             let req = ListOwnedObjectsRequest::default()
                 .with_owner(owner.clone())
                 .with_object_type(printer_cap_type)
@@ -75,7 +75,7 @@ impl Wallet {
             }
         }
 
-        // 後備：不帶 object_type，改掃「全部」擁有物（同樣自動分頁），再以型別字串過濾 PrinterCap。
+        // Fallback: list all owned objects (still paginated), filter by type string containing PrinterCap.
         {
             let client = self.rpc.lock().await;
             let req = ListOwnedObjectsRequest::default()
@@ -107,7 +107,7 @@ impl Wallet {
         }
 
         Err(anyhow!(
-            "此地址找不到 PrinterCap。請先完成印表機註冊，並確認目前選取的網路與錢包／部署網路一致。"
+            "No PrinterCap for this address. Register a printer first and ensure the selected network matches your wallet/deployment."
         ))
     }
 

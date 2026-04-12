@@ -71,7 +71,7 @@ impl Wallet {
         let list_req = ListDynamicFieldsRequest::default()
             .with_parent(kiosk_id.to_string())
             .with_page_size(200)
-            // `ListDynamicFieldsRequest.read_mask` 的欄位路徑相對於 `DynamicField`（見 proto 註解預設 parent,field_id）。
+            // `ListDynamicFieldsRequest.read_mask` paths are relative to `DynamicField` (see proto; default parent,field_id).
             .with_read_mask(read_mask("child_id,field_object.object_id"));
 
         let stream = client.list_dynamic_fields(list_req);

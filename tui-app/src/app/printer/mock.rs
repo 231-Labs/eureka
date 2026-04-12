@@ -6,22 +6,22 @@ use tokio::sync::Mutex;
 use crate::app::core::App;
 use crate::app::{MessageType, ScriptStatus, PrintStatus};
 
-/// 模擬打印腳本執行的結果類型
+/// Outcome type for the mock print script.
 #[allow(dead_code)]
 pub enum MockPrintScriptResult {
-    /// 成功完成打印
+    /// Finished successfully
     Success,
-    /// 打印機未連接錯誤
+    /// Printer not connected
     PrinterNotConnected,
-    /// 切片處理失敗錯誤
+    /// Slicing failed
     SlicingFailed,
-    /// 串口通訊失敗錯誤
+    /// Serial communication failed
     SerialCommFailed,
-    /// 自定義錯誤
+    /// Custom exit code + message
     CustomError(i32, String),
 }
 
-/// 模擬打印腳本執行，可配置不同的結果和執行時間
+/// Run a mock print script with configurable outcome and duration.
 #[allow(unused_mut, dead_code)]
 pub async fn run_mock_print_script(
     app: Arc<Mutex<App>>, 
@@ -29,7 +29,7 @@ pub async fn run_mock_print_script(
     execution_time_secs: u64,
     should_generate_logs: bool
 ) -> Result<bool, String> {
-    // 初始化打印狀態
+    // Initialize print state
     {
         let mut app_guard = app.lock().await;
         app_guard.script_status = ScriptStatus::Running;
@@ -38,21 +38,21 @@ pub async fn run_mock_print_script(
         app_guard.set_message(MessageType::Info, "Starting mock print script...".to_string());
         
         if should_generate_logs {
-            // 添加一些模擬打印日誌
+            // Seed a few mock log lines
             app_guard.print_output.push("[STDOUT] initializing...".to_string());
             app_guard.print_output.push("[STDOUT] checking connection...".to_string());
         }
     }
     
-    // 模擬打印過程中的日誌輸出
+    // Stream mock logs during the run
     if should_generate_logs {
-        // 間隔生成日誌的總次數
-        let log_intervals = execution_time_secs.min(30); // 最多模擬30條日誌
+        // Number of log intervals
+        let log_intervals = execution_time_secs.min(30); // cap at ~30 log lines
         if log_intervals > 0 {
             let interval_duration = Duration::from_secs(execution_time_secs / log_intervals);
             
             for i in 0..log_intervals {
-                // 等待一段時間後生成日誌
+                // Wait, then append a log line
                 sleep(interval_duration).await;
                 
                 let progress = (i as f32 / log_intervals as f32 * 100.0) as u8;
@@ -101,11 +101,11 @@ pub async fn run_mock_print_script(
             }
         }
     } else {
-        // 如果不產生日誌，就只是等待執行時間
+        // No logs: just sleep for the full duration
         sleep(Duration::from_secs(execution_time_secs)).await;
     }
     
-    // 模擬打印完成後更新狀態
+    // Final state after mock completion
     let mut app_guard = app.lock().await;
     
     match result {
@@ -124,7 +124,7 @@ pub async fn run_mock_print_script(
             if should_update_blockchain {
                 // Spawn a task to update blockchain status
                 let app_clone_for_completion = Arc::clone(&app);
-                drop(app_guard); // 釋放鎖，避免死鎖
+                drop(app_guard); // release lock before spawning
                 
                 tokio::spawn(async move {
                     App::update_blockchain_on_completion(app_clone_for_completion).await;
