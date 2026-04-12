@@ -14,6 +14,7 @@ impl Wallet {
                 blob_id: String::new(),
                 printed_count: 0,
                 id: String::new(),
+                source_kiosk_id: None,
                 is_encrypted: false,
                 seal_resource_id: None,
             }]

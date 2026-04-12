@@ -35,7 +35,7 @@ fn prost_to_json(v: &prost_types::Value) -> Json {
 }
 
 const DEFAULT_OWNER: &str = "0x006d980cadd43c778e628201b45cfd3ba6e1047c65f67648a88f635108ffd6eb";
-const EUREKA_TESTNET_PKG: &str = "0x8852004ffc677790d0ee729aa386286cbcbc7f4f1b4aa87c50213d2acb5d678f";
+const EUREKA_TESTNET_PKG: &str = "0x0be58b29c27063157169e31f9f86f360cf7b05bc5d755bc92d88ea5120dd88a2";
 
 #[tokio::main]
 async fn main() -> Result<()> {

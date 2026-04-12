@@ -229,6 +229,22 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 }
                             }
                         }
+                        KeyCode::Char('j') | KeyCode::Char('J') => {
+                            if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
+                                if app_guard.printer_id == "No Printer ID" {
+                                    app_guard.set_message(
+                                        MessageType::Error,
+                                        "Register a printer before clearing a stuck PrintJob.".to_string(),
+                                    );
+                                } else {
+                                    drop(app_guard);
+                                    let app_clone = Arc::clone(&app_arc);
+                                    tokio::spawn(async move {
+                                        let _ = crate::app::printer::blockchain::run_clear_stuck_print_job_from_selection(app_clone).await;
+                                    });
+                                }
+                            }
+                        }
                         KeyCode::Char('t') => {
                             if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
                                 app_guard.print_output.push("[INFO] Starting mock print mode (T key pressed)".to_string());
@@ -297,6 +313,7 @@ fn start_sculpt_loading_task(app: Arc<Mutex<App>>) {
                         blob_id: String::new(),
                         printed_count: 0,
                         id: String::new(),
+                        source_kiosk_id: None,
                         is_encrypted: false,
                         seal_resource_id: None,
                     }];

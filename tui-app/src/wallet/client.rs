@@ -1,8 +1,8 @@
 use std::sync::Arc;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use futures::TryStreamExt;
-use sui_rpc::proto::sui::rpc::v2::ListBalancesRequest;
-use sui_sdk_types::Address;
+use sui_rpc::proto::sui::rpc::v2::{Balance, ListBalancesRequest};
+use sui_sdk_types::{Address, TypeTag};
 use tokio::sync::Mutex;
 
 use crate::constants::WALRUS_COIN_TYPE;
@@ -42,6 +42,10 @@ impl Wallet {
     }
 
     async fn get_coin_balance(&self, address: Address, coin_type: &str) -> Result<u128> {
+        let want: TypeTag = coin_type
+            .parse()
+            .map_err(|e| anyhow!("invalid coin type string {coin_type:?}: {e}"))?;
+
         let client = self.rpc.lock().await;
         let req = ListBalancesRequest::default()
             .with_owner(address.to_string())
@@ -51,10 +55,25 @@ impl Wallet {
         let stream = client.list_balances(req);
         tokio::pin!(stream);
         while let Some(bal) = stream.try_next().await? {
-            if bal.coin_type_opt() == Some(coin_type) {
-                total += bal.balance_opt().unwrap_or(0) as u128;
+            let Some(ct_str) = bal.coin_type_opt() else {
+                continue;
+            };
+            let Ok(ct) = ct_str.parse::<TypeTag>() else {
+                continue;
+            };
+            if ct != want {
+                continue;
             }
+            total += Self::balance_from_list_row(&bal);
         }
         Ok(total)
+    }
+
+    /// `Balance.balance` is the preferred total; some RPCs only fill `address_balance` / `coin_balance`.
+    fn balance_from_list_row(bal: &Balance) -> u128 {
+        if let Some(b) = bal.balance_opt() {
+            return b as u128;
+        }
+        bal.address_balance_opt().unwrap_or(0) as u128 + bal.coin_balance_opt().unwrap_or(0) as u128
     }
 }

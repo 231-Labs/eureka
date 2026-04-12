@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use futures::TryStreamExt;
 use serde_json::{Map, Value as Json};
 use sui_rpc::proto::sui::rpc::v2::GetObjectRequest;
@@ -56,6 +56,56 @@ impl Wallet {
             }
         }
         Ok(kiosk_ids)
+    }
+
+    /// Find the owned `KioskOwnerCap` object id whose `for` field matches `kiosk_id`.
+    pub async fn resolve_kiosk_owner_cap_object_id(
+        &self,
+        owner: Address,
+        kiosk_id: Address,
+    ) -> Result<Address> {
+        let client = self.rpc.lock().await;
+        let req = ListOwnedObjectsRequest::default()
+            .with_owner(owner.to_string())
+            .with_page_size(200)
+            .with_read_mask(read_mask("object_type,json,object_id"));
+
+        let stream = client.list_owned_objects(req);
+        tokio::pin!(stream);
+        while let Some(obj) = stream.try_next().await? {
+            let t = obj.object_type_opt().unwrap_or("");
+            if !t.contains("::kiosk::KioskOwnerCap") {
+                continue;
+            }
+            let Some(j) = obj
+                .json
+                .as_ref()
+                .map(|v| prost_value_to_json(v.as_ref()))
+            else {
+                continue;
+            };
+            let Some(fields) = move_fields_map(&j) else {
+                continue;
+            };
+            let Some(for_addr) = fields
+                .get("for")
+                .and_then(json_address_from_move_value)
+            else {
+                continue;
+            };
+            if for_addr != kiosk_id {
+                continue;
+            }
+            let cap_str = obj.object_id_opt().ok_or_else(|| anyhow!("KioskOwnerCap missing object_id"))?;
+            return cap_str
+                .parse()
+                .map_err(|e| anyhow!("KioskOwnerCap id: {}", e));
+        }
+
+        Err(anyhow!(
+            "No KioskOwnerCap found for kiosk {}; ensure this wallet owns the cap for that kiosk.",
+            kiosk_id
+        ))
     }
 
     async fn get_sculpts_from_kiosk(&self, kiosk_id: Address) -> Result<Vec<SculptItem>> {
@@ -117,7 +167,7 @@ impl Wallet {
                 .as_ref()
                 .map(|v| prost_value_to_json(v.as_ref()))
             {
-                if let Some(item) = self.parse_sculpt_from_kiosk_json(&j, oid) {
+                if let Some(item) = self.parse_sculpt_from_kiosk_json(&j, oid, kiosk_id) {
                     sculpt_items.push(item);
                 }
             }
@@ -126,14 +176,22 @@ impl Wallet {
         Ok(sculpt_items)
     }
 
-    fn parse_sculpt_from_kiosk_json(&self, root: &Json, object_id: String) -> Option<SculptItem> {
+    fn parse_sculpt_from_kiosk_json(
+        &self,
+        root: &Json,
+        object_id: String,
+        source_kiosk: Address,
+    ) -> Option<SculptItem> {
         let fields = move_fields_map(root)?;
-        if let Some(item) = self.parse_sculpt_fields_json(&fields, object_id.clone()) {
-            return Some(item);
-        }
-        let value = fields.get("value")?;
-        let inner = move_fields_map(value)?;
-        self.parse_sculpt_fields_json(&inner, object_id)
+        let mut item = if let Some(i) = self.parse_sculpt_fields_json(&fields, object_id.clone()) {
+            i
+        } else {
+            let value = fields.get("value")?;
+            let inner = move_fields_map(value)?;
+            self.parse_sculpt_fields_json(&inner, object_id)?
+        };
+        item.source_kiosk_id = Some(source_kiosk.to_string());
+        Some(item)
     }
 
     fn parse_sculpt_fields_json(
@@ -159,6 +217,7 @@ impl Wallet {
             blob_id: structure_value,
             printed_count: printed,
             id: object_id,
+            source_kiosk_id: None,
             is_encrypted: encrypted,
             seal_resource_id,
         })

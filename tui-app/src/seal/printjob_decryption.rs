@@ -234,6 +234,19 @@ impl PrintJobDecryptor {
         printer_cap_id: SuiObjectID,
         printer_version: u64,
     ) -> Result<Vec<u8>> {
+        // Seal ciphertext embeds the Eureka `package_id` used at encrypt time; it must match the
+        // app-configured package *and* the on-chain Printer/PrintJob deployment, or key fetch fails
+        // with e.g. "No keys available for object … full_id …".
+        let seal_package_id = encrypted.package_id;
+        if seal_package_id != self.eureka_package_id {
+            return Err(anyhow::anyhow!(
+                "Seal ciphertext is bound to Eureka package {}, but this app is configured for {}.\n\
+                 After redeploying Eureka you must re-encrypt and re-upload to Walrus with the new package; re-registering the printer alone cannot decrypt ciphertext from an older package.",
+                seal_package_id,
+                self.eureka_package_id
+            ));
+        }
+
         // Load wallet
         let wallet_path = std::env::var("HOME")
             .map_err(|_| anyhow::anyhow!("Cannot find HOME env var"))?
@@ -241,9 +254,9 @@ impl PrintJobDecryptor {
 
         let mut wallet = WalletContext::new(Path::new(&wallet_path))?;
         
-        // SessionKey uses Eureka package ID as the IBE namespace
+        // SessionKey IBE namespace must be the same `package_id` stored in the ciphertext.
         let session_key = SessionKey::new(
-            self.eureka_package_id,
+            seal_package_id,
             10,
             &mut wallet,
         )
@@ -290,7 +303,7 @@ impl PrintJobDecryptor {
         // Call seal_approve in eureka module (no type arguments!)
         // entry fun seal_approve(_id, printer, printer_cap, ctx)
         builder.programmable_move_call(
-            self.eureka_package_id.into(),
+            seal_package_id.into(),
             Identifier::from_str("eureka")?,
             Identifier::from_str("seal_approve")?,
             vec![], // No type arguments needed!

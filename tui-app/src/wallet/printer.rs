@@ -12,6 +12,43 @@ use super::utils::{extract_id_from_fields, extract_printer_id_from_cap};
 use super::client::Wallet;
 
 impl Wallet {
+    /// First address segment of a struct tag, e.g. `0xpkg::eureka::Printer` → `0xpkg`.
+    fn package_id_from_struct_tag(type_tag: &str) -> Option<String> {
+        let first = type_tag.split("::").next()?.trim();
+        if first.is_empty() {
+            return None;
+        }
+        Some(first.to_string())
+    }
+
+    /// `true` if `type_tag` is `{package}::eureka::PrinterCap` (package compared as [`Address`]).
+    fn type_tag_is_printer_cap_for_package(type_tag: &str, package_hex: &str) -> bool {
+        if !type_tag.contains("::eureka::PrinterCap") {
+            return false;
+        }
+        let Some(tag_pkg) = Self::package_id_from_struct_tag(type_tag) else {
+            return false;
+        };
+        match (tag_pkg.parse::<Address>(), package_hex.parse::<Address>()) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => tag_pkg.eq_ignore_ascii_case(package_hex),
+        }
+    }
+
+    /// `true` if `type_tag` is `{package}::eureka::Printer`.
+    fn type_tag_is_printer_for_package(type_tag: &str, package_hex: &str) -> bool {
+        if !type_tag.contains("::eureka::Printer") {
+            return false;
+        }
+        let Some(tag_pkg) = Self::package_id_from_struct_tag(type_tag) else {
+            return false;
+        };
+        match (tag_pkg.parse::<Address>(), package_hex.parse::<Address>()) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => tag_pkg.eq_ignore_ascii_case(package_hex),
+        }
+    }
+
     fn extract_pool_balance(fields: &Map<String, Json>) -> u128 {
         fields
             .get("pool")
@@ -24,11 +61,15 @@ impl Wallet {
             .unwrap_or(0)
     }
 
-    fn extract_printer_from_json(&self, root: &Json) -> Option<PrinterInfo> {
+    fn extract_printer_from_json(&self, root: &Json, eureka_package_id: String) -> Option<PrinterInfo> {
         let fields = move_fields_map(root)?;
         let id = extract_id_from_fields(&fields)?;
         let pool_balance = Self::extract_pool_balance(&fields);
-        Some(PrinterInfo { id, pool_balance })
+        Some(PrinterInfo {
+            id,
+            pool_balance,
+            eureka_package_id,
+        })
     }
 
     pub async fn get_printer_cap_info(&self, address: Address) -> Result<(String, String)> {
@@ -54,11 +95,15 @@ impl Wallet {
                 .with_owner(owner.clone())
                 .with_object_type(printer_cap_type)
                 .with_page_size(50)
-                .with_read_mask(read_mask("json,object_id"));
+                .with_read_mask(read_mask("json,object_id,object_type"));
 
             let stream = client.list_owned_objects(req);
             tokio::pin!(stream);
             while let Some(obj) = stream.try_next().await? {
+                let t = obj.object_type_opt().unwrap_or("");
+                if !Self::type_tag_is_printer_cap_for_package(t, current_package_id) {
+                    continue;
+                }
                 let Some(pv) = obj.json.as_ref() else {
                     continue;
                 };
@@ -75,7 +120,7 @@ impl Wallet {
             }
         }
 
-        // Fallback: list all owned objects (still paginated), filter by type string containing PrinterCap.
+        // Fallback: list owned objects only if gRPC `object_type` filter missed — still require exact package id from constants.
         {
             let client = self.rpc.lock().await;
             let req = ListOwnedObjectsRequest::default()
@@ -87,7 +132,7 @@ impl Wallet {
             tokio::pin!(stream);
             while let Some(obj) = stream.try_next().await? {
                 let t = obj.object_type_opt().unwrap_or("");
-                if !t.contains("::eureka::PrinterCap") {
+                if !Self::type_tag_is_printer_cap_for_package(t, current_package_id) {
                     continue;
                 }
                 let Some(pv) = obj.json.as_ref() else {
@@ -107,7 +152,8 @@ impl Wallet {
         }
 
         Err(anyhow!(
-            "No PrinterCap for this address. Register a printer first and ensure the selected network matches your wallet/deployment."
+            "No PrinterCap for Eureka package {} on this address (older deployments are ignored). Register a printer for the current package or switch network in constants.",
+            current_package_id
         ))
     }
 
@@ -126,14 +172,28 @@ impl Wallet {
         let resp = client
             .ledger_client()
             .get_object(
-                GetObjectRequest::new(&printer_aid).with_read_mask(read_mask("json")),
+                GetObjectRequest::new(&printer_aid).with_read_mask(read_mask("json,object_type")),
             )
             .await?
             .into_inner();
 
+        let type_tag = resp.object().object_type_opt().unwrap_or("");
+        let current_package_id = self.network_state.get_current_package_ids().eureka_package_id;
+        if !Self::type_tag_is_printer_for_package(type_tag, current_package_id) {
+            return Err(anyhow!(
+                "Linked printer object type does not match configured Eureka package.\n\
+                 Object: {}\n\
+                 Expected package: {}::eureka::Printer\n\
+                 The PrinterCap may point at a printer from an older deployment; register again for the current package.",
+                type_tag,
+                current_package_id
+            ));
+        }
+        let eureka_package_id = current_package_id.to_string();
+
         if let Some(j) = resp.object().json.as_ref() {
             let json = prost_value_to_json(j);
-            if let Some(info) = self.extract_printer_from_json(&json) {
+            if let Some(info) = self.extract_printer_from_json(&json, eureka_package_id) {
                 return Ok(info);
             }
         }

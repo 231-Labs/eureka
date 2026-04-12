@@ -3,11 +3,14 @@ pub const EUREKA_DEVNET_PACKAGE_ID: &str = "0xa73e8ca153ab4f98b212ac1ee21d69a9d2
 pub const EUREKA_DEVNET_PRINTER_REGISTRY_ID: &str = "0xbd50616301535dcb649ddfc628a7163527def73a97cb387b09c5f4352285ca86";
 pub const SCULPT_DEVNET_PACKAGE_ID: &str = "0x2571c1e364b5647e1ee17b43f9f289e5c64ce3a0c38f6f9441a3f331e0083efa";
 
-/// Testnet - Fresh deployment (2025-11-13)
+/// Testnet — `SCULPT_TESTNET_PACKAGE_ID` must match `archimeters-1/contract/Published.toml` → `[published.testnet].published-at`.
+/// Eureka package / registry from fresh publish (digest `9r5844hQmGrNrRQkD8gTKHL4A4jFW9imwQ1aLGtULVZ9`).
 pub const WALRUS_COIN_TYPE: &str = "0x356a26eb9e012a68958082340d4c4116e7f55615cf27affcff209cf0ae544f59::wal::WAL";
-pub const EUREKA_TESTNET_PACKAGE_ID: &str = "0x8852004ffc677790d0ee729aa386286cbcbc7f4f1b4aa87c50213d2acb5d678f";
-pub const EUREKA_TESTNET_PRINTER_REGISTRY_ID: &str = "0xed250799748535bcaa187bad46f2fcd323f22d935454cef5bd724260a48a38a8";
-pub const SCULPT_TESTNET_PACKAGE_ID: &str = "0xc1814c4cbd4c23f306e886c7f8aace3ce1635d0a6e896b3bf35835139945d693";
+pub const EUREKA_TESTNET_PACKAGE_ID: &str =
+    "0x1737bb093b90783dfe0e0056df602bdfa42fc417d91fed1e02a27a88b949c3b3";
+pub const EUREKA_TESTNET_PRINTER_REGISTRY_ID: &str =
+    "0x3498e9fef83b29ef471d3070daf7764f3f9abcc982daa34fdf7fda9b612e9409";
+pub const SCULPT_TESTNET_PACKAGE_ID: &str = "0x51d9c918431258ae6748b50234d0da3d436e6df8e2087fa1446913e390336ab8";
 pub const AGGREGATOR_URL: &str = "https://walrus-agg-test.bucketprotocol.io";
 
 // Global constants

@@ -48,6 +48,7 @@ impl App {
                 crate::wallet::PrinterInfo {
                     id: "No Printer ID".to_string(),
                     pool_balance: 0,
+                    eureka_package_id: String::new(),
                 }
             }
         };

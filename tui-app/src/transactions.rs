@@ -8,7 +8,7 @@ use sui_rpc::proto::sui::rpc::v2::GetObjectRequest;
 use sui_rpc::Client as GrpcClient;
 use sui_sdk_types::Address;
 use sui_sdk_types::Identifier;
-use sui_transaction_builder::{Function, ObjectInput, TransactionBuilder as TxBuilder};
+use sui_transaction_builder::{Error as TxBuilderError, Function, ObjectInput, TransactionBuilder as TxBuilder};
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 
@@ -18,6 +18,14 @@ use crate::utils::NetworkState;
 
 const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(30);
 const OBJECT_FETCH_TIMEOUT: Duration = Duration::from_secs(10);
+
+fn format_tx_builder_error(e: TxBuilderError) -> String {
+    match e {
+        TxBuilderError::Input(msg) => msg,
+        TxBuilderError::SimulationFailure(s) => s.to_string(),
+        other => format!("{:?}", other),
+    }
+}
 
 pub struct TransactionExecutor {
     rpc: Arc<Mutex<GrpcClient>>,
@@ -127,16 +135,11 @@ impl TransactionExecutor {
 
     async fn run_eureka_ptb(
         &self,
-        network: &NetworkState,
+        package: Address,
         function: &str,
         object_inputs: Vec<ObjectInput>,
         pure_args: Vec<Vec<u8>>,
     ) -> Result<String> {
-        let package: Address = network
-            .get_current_package_ids()
-            .eureka_package_id
-            .parse()
-            .map_err(|e| anyhow!("package id: {}", e))?;
 
         let mut tb = TxBuilder::new();
         tb.set_sender(self.sender);
@@ -161,7 +164,7 @@ impl TransactionExecutor {
             let mut c = self.rpc.lock().await;
             tb.build(&mut *c)
                 .await
-                .map_err(|e| anyhow!("PTB build/simulate: {}", e))?
+                .map_err(|e| anyhow!("PTB build/simulate: {}", format_tx_builder_error(e)))?
         };
         self.sign_and_execute(tx).await
     }
@@ -170,6 +173,8 @@ impl TransactionExecutor {
 pub struct TransactionBuilder {
     executor: TransactionExecutor,
     network_state: NetworkState,
+    /// When set, used as the package id for `eureka::*` move calls (must match on-chain `Printer` type).
+    eureka_package_override: Option<Address>,
 }
 
 impl TransactionBuilder {
@@ -183,7 +188,37 @@ impl TransactionBuilder {
         Self {
             executor,
             network_state,
+            eureka_package_override: None,
         }
+    }
+
+    pub fn with_eureka_package(mut self, package_id: Address) -> Self {
+        self.eureka_package_override = Some(package_id);
+        self
+    }
+
+    /// Prefer the package id from [`crate::wallet::PrinterInfo::eureka_package_id`] when non-empty.
+    pub fn with_printer_eureka_package(self, package_id: &str) -> Self {
+        if package_id.is_empty() {
+            return self;
+        }
+        match package_id.parse::<Address>() {
+            Ok(p) => self.with_eureka_package(p),
+            Err(_) => self,
+        }
+    }
+
+    fn resolve_eureka_package_id(&self) -> Result<Address> {
+        if let Some(p) = self.eureka_package_override {
+            return Ok(p);
+        }
+        let s = self.network_state.get_current_package_ids().eureka_package_id;
+        if s.is_empty() {
+            return Err(anyhow!(
+                "Eureka package ID is not set for this network; cannot build eureka transaction"
+            ));
+        }
+        s.parse().map_err(|e| anyhow!("package id: {}", e))
     }
 
     async fn create_printer_cap_arg(&self, printer_cap_id: Address) -> Result<ObjectInput> {
@@ -243,13 +278,9 @@ impl TransactionBuilder {
         object_inputs: Vec<ObjectInput>,
         pure_args: Vec<Vec<u8>>,
     ) -> Result<String> {
+        let package = self.resolve_eureka_package_id()?;
         self.executor
-            .run_eureka_ptb(
-                &self.network_state,
-                function,
-                object_inputs,
-                pure_args,
-            )
+            .run_eureka_ptb(package, function, object_inputs, pure_args)
             .await
     }
 
@@ -338,6 +369,28 @@ impl TransactionBuilder {
         .await
     }
 
+    pub async fn start_print_job_from_kiosk(
+        &self,
+        printer_cap_id: Address,
+        printer_id: Address,
+        kiosk_id: Address,
+        kiosk_cap_id: Address,
+        sculpt_id: Address,
+    ) -> Result<String> {
+        let cap_arg = self.create_printer_cap_arg(printer_cap_id).await?;
+        let printer_arg = self.create_shared_object_arg(printer_id, true).await?;
+        let kiosk_arg = self.create_shared_object_arg(kiosk_id, true).await?;
+        let kiosk_cap_arg = self.create_owned_object_arg(kiosk_cap_id).await?;
+        let clock_arg = self.create_clock_arg().await?;
+        let id_bytes = bcs::to_bytes(&sculpt_id).map_err(|e| anyhow!("bcs sculpt ID: {}", e))?;
+        self.execute_eureka_call(
+            "start_print_job_from_kiosk",
+            vec![cap_arg, printer_arg, kiosk_arg, kiosk_cap_arg, clock_arg],
+            vec![id_bytes],
+        )
+        .await
+    }
+
     pub async fn complete_print_job(
         &self,
         printer_cap_id: Address,
@@ -383,6 +436,66 @@ impl TransactionBuilder {
             "create_and_assign_print_job_free",
             vec![printer_arg, sculpt_arg],
             vec![],
+        )
+        .await
+    }
+
+    /// Print job for a `Sculpt` listed from a Kiosk (uses `kiosk::borrow_mut` on-chain).
+    pub async fn create_print_job_from_kiosk_free(
+        &self,
+        printer_id: Address,
+        kiosk_id: Address,
+        kiosk_cap_id: Address,
+        sculpt_id: Address,
+    ) -> Result<String> {
+        let printer_arg = self.create_shared_object_arg(printer_id, true).await?;
+        let kiosk_arg = self.create_shared_object_arg(kiosk_id, true).await?;
+        let cap_arg = self.create_owned_object_arg(kiosk_cap_id).await?;
+        let id_bytes = bcs::to_bytes(&sculpt_id).map_err(|e| anyhow!("bcs sculpt ID: {}", e))?;
+        self.execute_eureka_call(
+            "create_print_job_from_kiosk_free",
+            vec![printer_arg, kiosk_arg, cap_arg],
+            vec![id_bytes],
+        )
+        .await
+    }
+
+    /// Dev / recovery: `eureka::clear_stuck_print_job` (owned sculpt).
+    pub async fn clear_stuck_print_job(
+        &self,
+        printer_cap_id: Address,
+        printer_id: Address,
+        sculpt_id: Address,
+    ) -> Result<String> {
+        let cap_arg = self.create_printer_cap_arg(printer_cap_id).await?;
+        let printer_arg = self.create_shared_object_arg(printer_id, true).await?;
+        let sculpt_arg = self.create_owned_object_arg(sculpt_id).await?;
+        self.execute_eureka_call(
+            "clear_stuck_print_job",
+            vec![cap_arg, printer_arg, sculpt_arg],
+            vec![],
+        )
+        .await
+    }
+
+    /// Dev / recovery: `eureka::clear_stuck_print_job_from_kiosk`.
+    pub async fn clear_stuck_print_job_from_kiosk(
+        &self,
+        printer_cap_id: Address,
+        printer_id: Address,
+        kiosk_id: Address,
+        kiosk_cap_id: Address,
+        sculpt_id: Address,
+    ) -> Result<String> {
+        let cap_arg = self.create_printer_cap_arg(printer_cap_id).await?;
+        let printer_arg = self.create_shared_object_arg(printer_id, true).await?;
+        let kiosk_arg = self.create_shared_object_arg(kiosk_id, true).await?;
+        let kiosk_cap_arg = self.create_owned_object_arg(kiosk_cap_id).await?;
+        let id_bytes = bcs::to_bytes(&sculpt_id).map_err(|e| anyhow!("bcs sculpt ID: {}", e))?;
+        self.execute_eureka_call(
+            "clear_stuck_print_job_from_kiosk",
+            vec![cap_arg, printer_arg, kiosk_arg, kiosk_cap_arg],
+            vec![id_bytes],
         )
         .await
     }

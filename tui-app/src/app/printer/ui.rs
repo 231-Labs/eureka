@@ -25,18 +25,18 @@ impl App {
         if self.printer_id != "No Printer ID" {
             self.set_message(MessageType::Info, "Sending status update to blockchain...".to_string());
             
-            let builder = crate::transactions::TransactionBuilder::new(
-                Arc::clone(&self.sui_rpc),
-                (*self.tx_signer).clone(),
-                self.wallet.address,
-                self.network_state.clone(),
-            );
-            
             // get printer info and printer cap
             let address = self.wallet.get_active_address().await?;
             
             match self.wallet.get_printer_info(address).await {
                 Ok(info) => {
+                    let builder = crate::transactions::TransactionBuilder::new(
+                        Arc::clone(&self.sui_rpc),
+                        (*self.tx_signer).clone(),
+                        self.wallet.address,
+                        self.network_state.clone(),
+                    )
+                    .with_printer_eureka_package(&info.eureka_package_id);
                     match self.wallet.get_printer_cap_id(address).await {
                         Ok(cap_id) => {
                             

@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
     
     // Package ID (fresh deployment 2025-11-13)
     let eureka_package_id = ObjectID::from_hex_literal(
-        "0x8852004ffc677790d0ee729aa386286cbcbc7f4f1b4aa87c50213d2acb5d678f"
+        "0x0be58b29c27063157169e31f9f86f360cf7b05bc5d755bc92d88ea5120dd88a2"
     )?;
     
     println!("📦 Package ID:");
