@@ -4,10 +4,14 @@ pub const EUREKA_DEVNET_PRINTER_REGISTRY_ID: &str = "0xbd50616301535dcb649ddfc62
 pub const SCULPT_DEVNET_PACKAGE_ID: &str = "0x2571c1e364b5647e1ee17b43f9f289e5c64ce3a0c38f6f9441a3f331e0083efa";
 
 /// Testnet — `SCULPT_TESTNET_PACKAGE_ID` must match `archimeters-1/contract/Published.toml` → `[published.testnet].published-at`.
-/// Eureka package / registry from fresh publish (digest `9r5844hQmGrNrRQkD8gTKHL4A4jFW9imwQ1aLGtULVZ9`).
+/// Eureka: `EUREKA_TESTNET_PACKAGE_ID` = `original-id` in `eureka-1/contract/eureka/Published.toml` (Seal IBE namespace, object type tags, printer matching).
+/// `EUREKA_TESTNET_MOVE_CALL_PACKAGE_ID` = `published-at` when the package was upgraded (PTB `MoveCall` target for new bytecode); empty = use original for calls too.
 pub const WALRUS_COIN_TYPE: &str = "0x356a26eb9e012a68958082340d4c4116e7f55615cf27affcff209cf0ae544f59::wal::WAL";
 pub const EUREKA_TESTNET_PACKAGE_ID: &str =
     "0x1737bb093b90783dfe0e0056df602bdfa42fc417d91fed1e02a27a88b949c3b3";
+/// Latest on-chain package linkage for Move calls (see `Published.toml` `[published.testnet].published-at`).
+pub const EUREKA_TESTNET_MOVE_CALL_PACKAGE_ID: &str =
+    "0x2ed3ff62c140c87f7bbd0c408b7a67e89fbc7bd60d7e587a0407cecca9204941";
 pub const EUREKA_TESTNET_PRINTER_REGISTRY_ID: &str =
     "0x3498e9fef83b29ef471d3070daf7764f3f9abcc982daa34fdf7fda9b612e9409";
 pub const SCULPT_TESTNET_PACKAGE_ID: &str = "0x51d9c918431258ae6748b50234d0da3d436e6df8e2087fa1446913e390336ab8";
@@ -30,7 +34,10 @@ pub const SUI_DECIMALS: f64 = 1_000_000_000.0;
 pub const MESSAGE_AREA_MARGIN: u16 = 4;
 
 pub struct NetworkPackageIds {
+    /// Original Eureka package id (`original-id`): Seal, type tags, printer discovery.
     pub eureka_package_id: &'static str,
+    /// If non-empty, PTB `eureka::*` calls use this address (`published-at` after upgrade).
+    pub eureka_move_call_package_id: &'static str,
     pub eureka_printer_registry_id: &'static str,
     #[allow(dead_code)]
     pub bottega_package_id: &'static str,
@@ -39,16 +46,19 @@ pub struct NetworkPackageIds {
 pub const NETWORK_PACKAGE_IDS: [NetworkPackageIds; 3] = [
     NetworkPackageIds {
         eureka_package_id: EUREKA_DEVNET_PACKAGE_ID,
+        eureka_move_call_package_id: "",
         eureka_printer_registry_id: EUREKA_DEVNET_PRINTER_REGISTRY_ID,
         bottega_package_id: SCULPT_DEVNET_PACKAGE_ID,
     },
     NetworkPackageIds {
         eureka_package_id: EUREKA_TESTNET_PACKAGE_ID,
+        eureka_move_call_package_id: EUREKA_TESTNET_MOVE_CALL_PACKAGE_ID,
         eureka_printer_registry_id: EUREKA_TESTNET_PRINTER_REGISTRY_ID,
         bottega_package_id: SCULPT_TESTNET_PACKAGE_ID,
     },
     NetworkPackageIds {
         eureka_package_id: "",
+        eureka_move_call_package_id: "",
         eureka_printer_registry_id: "",
         bottega_package_id: "",
     },

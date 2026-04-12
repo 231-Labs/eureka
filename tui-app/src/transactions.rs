@@ -8,7 +8,9 @@ use sui_rpc::proto::sui::rpc::v2::GetObjectRequest;
 use sui_rpc::Client as GrpcClient;
 use sui_sdk_types::Address;
 use sui_sdk_types::Identifier;
-use sui_transaction_builder::{Error as TxBuilderError, Function, ObjectInput, TransactionBuilder as TxBuilder};
+use sui_transaction_builder::{
+    Argument, Error as TxBuilderError, Function, ObjectInput, TransactionBuilder as TxBuilder,
+};
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 
@@ -140,17 +142,31 @@ impl TransactionExecutor {
         object_inputs: Vec<ObjectInput>,
         pure_args: Vec<Vec<u8>>,
     ) -> Result<String> {
+        let args: Vec<EurekaPtbArg> = object_inputs
+            .into_iter()
+            .map(EurekaPtbArg::Object)
+            .chain(pure_args.into_iter().map(EurekaPtbArg::Pure))
+            .collect();
+        self.run_eureka_ptb_ordered(package, function, args).await
+    }
 
+    /// Object and pure arguments in **Move parameter order** (e.g. `sculpt_id` before `clock`).
+    async fn run_eureka_ptb_ordered(
+        &self,
+        package: Address,
+        function: &str,
+        args: Vec<EurekaPtbArg>,
+    ) -> Result<String> {
         let mut tb = TxBuilder::new();
         tb.set_sender(self.sender);
         tb.set_gas_budget(GAS_BUDGET);
 
-        let mut call_args = Vec::new();
-        for oi in object_inputs {
-            call_args.push(tb.object(oi));
-        }
-        for bytes in pure_args {
-            call_args.push(tb.pure_bytes(bytes));
+        let mut call_args: Vec<Argument> = Vec::with_capacity(args.len());
+        for a in args {
+            match a {
+                EurekaPtbArg::Object(oi) => call_args.push(tb.object(oi)),
+                EurekaPtbArg::Pure(bytes) => call_args.push(tb.pure_bytes(bytes)),
+            }
         }
 
         let f = Function::new(
@@ -168,6 +184,11 @@ impl TransactionExecutor {
         };
         self.sign_and_execute(tx).await
     }
+}
+
+enum EurekaPtbArg {
+    Object(ObjectInput),
+    Pure(Vec<u8>),
 }
 
 pub struct TransactionBuilder {
@@ -197,7 +218,8 @@ impl TransactionBuilder {
         self
     }
 
-    /// Prefer the package id from [`crate::wallet::PrinterInfo::eureka_package_id`] when non-empty.
+    /// Override from on-chain `Printer` type tag (`original-id`). Ignored for PTB when the network sets
+    /// [`NetworkPackageIds::eureka_move_call_package_id`] (upgraded `published-at`).
     pub fn with_printer_eureka_package(self, package_id: &str) -> Self {
         if package_id.is_empty() {
             return self;
@@ -209,10 +231,17 @@ impl TransactionBuilder {
     }
 
     fn resolve_eureka_package_id(&self) -> Result<Address> {
+        let ids = self.network_state.get_current_package_ids();
+        if !ids.eureka_move_call_package_id.is_empty() {
+            return ids
+                .eureka_move_call_package_id
+                .parse()
+                .map_err(|e| anyhow!("eureka_move_call_package_id: {}", e));
+        }
         if let Some(p) = self.eureka_package_override {
             return Ok(p);
         }
-        let s = self.network_state.get_current_package_ids().eureka_package_id;
+        let s = ids.eureka_package_id;
         if s.is_empty() {
             return Err(anyhow!(
                 "Eureka package ID is not set for this network; cannot build eureka transaction"
@@ -281,6 +310,17 @@ impl TransactionBuilder {
         let package = self.resolve_eureka_package_id()?;
         self.executor
             .run_eureka_ptb(package, function, object_inputs, pure_args)
+            .await
+    }
+
+    async fn execute_eureka_call_ordered(
+        &self,
+        function: &str,
+        args: Vec<EurekaPtbArg>,
+    ) -> Result<String> {
+        let package = self.resolve_eureka_package_id()?;
+        self.executor
+            .run_eureka_ptb_ordered(package, function, args)
             .await
     }
 
@@ -383,10 +423,16 @@ impl TransactionBuilder {
         let kiosk_cap_arg = self.create_owned_object_arg(kiosk_cap_id).await?;
         let clock_arg = self.create_clock_arg().await?;
         let id_bytes = bcs::to_bytes(&sculpt_id).map_err(|e| anyhow!("bcs sculpt ID: {}", e))?;
-        self.execute_eureka_call(
+        self.execute_eureka_call_ordered(
             "start_print_job_from_kiosk",
-            vec![cap_arg, printer_arg, kiosk_arg, kiosk_cap_arg, clock_arg],
-            vec![id_bytes],
+            vec![
+                EurekaPtbArg::Object(cap_arg),
+                EurekaPtbArg::Object(printer_arg),
+                EurekaPtbArg::Object(kiosk_arg),
+                EurekaPtbArg::Object(kiosk_cap_arg),
+                EurekaPtbArg::Pure(id_bytes),
+                EurekaPtbArg::Object(clock_arg),
+            ],
         )
         .await
     }

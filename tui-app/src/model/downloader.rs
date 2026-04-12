@@ -1,6 +1,6 @@
 use crate::app::core::App;
 use crate::constants::AGGREGATOR_URL;
-use crate::seal::{PrintJobDecryptor, SealDecryptor};
+use crate::seal::{is_file_encrypted, PrintJobDecryptor};
 use crate::app::printer::mock::{run_mock_print_script, MockPrintScriptResult};
 use anyhow::Result;
 use seal_sdk_rs::native_sui_sdk::sui_types::base_types::ObjectID as SuiObjectID;
@@ -81,7 +81,7 @@ async fn decrypt_model_with_printjob(
 ) -> Result<()> {
     let encrypted_data = tokio::fs::read(file_path).await?;
 
-    if !SealDecryptor::is_file_encrypted(&encrypted_data) {
+    if !is_file_encrypted(&encrypted_data) {
         log.push("[LOG] ⚠️  File looks like plaintext STL; skipping decryption".to_string());
         return Ok(());
     }
@@ -557,7 +557,11 @@ impl App {
                                         "[MOCK] Submitting start_print_job (required before transfer_completed)…"
                                             .to_string(),
                                     );
-                                    app.set_message(crate::app::MessageType::Success, "Mock print job completed successfully!".to_string());
+                                    app.set_message(
+                                        crate::app::MessageType::Info,
+                                        "Mock print done; submitting on-chain start_print_job…"
+                                            .to_string(),
+                                    );
                                 }
 
                                 if let Err(e) = crate::app::printer::blockchain::run_start_print_job_for_active_task(
@@ -593,7 +597,7 @@ impl App {
                                     Ok(_) => {
                                         let mut app = app_clone.lock().await;
                                         app.print_output.push("[MOCK] ✅ PrintJob marked as completed on blockchain!".to_string());
-                                        app.set_message(crate::app::MessageType::Success, "Mock print and PrintJob completion successful!".to_string());
+                                        // Success banner comes from `run_transfer_completed_print_job` (tx + task refresh).
                                     },
                                     Err(e) => {
                                         let mut app = app_clone.lock().await;

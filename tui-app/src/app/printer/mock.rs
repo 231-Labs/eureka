@@ -112,7 +112,11 @@ pub async fn run_mock_print_script(
         MockPrintScriptResult::Success => {
             app_guard.script_status = ScriptStatus::Completed;
             app_guard.print_status = PrintStatus::Completed;
-            app_guard.set_message(MessageType::Success, "Print completed successfully".to_string());
+            // Sub-step only: T-key flow continues with on-chain `start_print_job` / transfer.
+            app_guard.set_message(
+                MessageType::Info,
+                "Mock print simulation finished (device step)".to_string(),
+            );
             // Do not call `update_blockchain_on_completion` here: that path uses `complete_print_job`,
             // which requires an owned `Sculpt` (kiosk-listed sculpts fail PTB simulation). Real print
             // (`run_print_script`) spawns completion itself; mock PrintJob flow (`T`) calls

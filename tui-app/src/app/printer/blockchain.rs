@@ -518,13 +518,6 @@ pub(crate) async fn run_transfer_completed_print_job(app: Arc<Mutex<App>>) -> Re
         Ok(tx_id) => {
             {
                 let mut g = app.lock().await;
-                g.set_message(
-                    MessageType::Success,
-                    format!(
-                        "PrintJob transferred to printer owner wallet successfully (Tx: {})",
-                        tx_id
-                    ),
-                );
                 g.tasks.clear();
                 g.print_status = PrintStatus::Idle;
                 g.script_status = ScriptStatus::Idle;
@@ -540,7 +533,10 @@ pub(crate) async fn run_transfer_completed_print_job(app: Arc<Mutex<App>>) -> Re
                 }
                 g.set_message(
                     MessageType::Success,
-                    "PrintJob transferred and printer is ready for next job".to_string(),
+                    format!(
+                        "On-chain PrintJob closed (transfer_completed, Tx: {}); ready for next job",
+                        tx_id
+                    ),
                 );
                 g.clamp_tasks_list_state();
             }
