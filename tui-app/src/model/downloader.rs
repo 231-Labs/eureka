@@ -553,11 +553,37 @@ impl App {
                                 {
                                     let mut app = app_clone.lock().await;
                                     app.print_output.push("[MOCK] ✅ Mock print completed successfully!".to_string());
-                                    app.print_output.push("[MOCK] Marking PrintJob as completed on blockchain...".to_string());
+                                    app.print_output.push(
+                                        "[MOCK] Submitting start_print_job (required before transfer_completed)…"
+                                            .to_string(),
+                                    );
                                     app.set_message(crate::app::MessageType::Success, "Mock print job completed successfully!".to_string());
                                 }
 
-                                // Directly call PrintJob completion using PrintJob context (not sculpt selection)
+                                if let Err(e) = crate::app::printer::blockchain::run_start_print_job_for_active_task(
+                                    Arc::clone(&app_clone),
+                                    &task,
+                                )
+                                .await
+                                {
+                                    let mut app = app_clone.lock().await;
+                                    app.print_output.push(format!(
+                                        "[MOCK] ⚠️ Cannot complete on-chain without start: {}",
+                                        e
+                                    ));
+                                    app.set_message(
+                                        crate::app::MessageType::Error,
+                                        format!("Mock print ok, but start_print_job failed: {}", e),
+                                    );
+                                    return;
+                                }
+
+                                {
+                                    let mut app = app_clone.lock().await;
+                                    app.print_output.push("[MOCK] Marking PrintJob as completed on blockchain...".to_string());
+                                }
+
+                                // `transfer_completed_print_job` requires `start_time > 0` on the PrintJob.
                                 let completion_result = crate::app::printer::blockchain::run_transfer_completed_print_job(
                                     Arc::clone(&app_clone),
                                 )

@@ -279,6 +279,114 @@ pub(crate) async fn run_start_print_job_from_selection(app: Arc<Mutex<App>>) -> 
     }
 }
 
+/// `start_print_job` for the printer's current on-chain task (`PrintTask.sculpt_blob_id` holds sculpt **object** id).
+/// Resolves kiosk from `sculpt_items` or by scanning the wallet's kiosks.
+pub(crate) async fn run_start_print_job_for_active_task(
+    app: Arc<Mutex<App>>,
+    task: &crate::app::print_job::PrintTask,
+) -> Result<(), String> {
+    let sculpt_id_str = task.sculpt_blob_id.clone();
+    let sculpt_id = App::parse_object_id(&sculpt_id_str, "sculpt ID")?;
+
+    let (mut source_kiosk_id, wallet, sui_rpc, tx_signer, network_state) = {
+        let g = app.lock().await;
+        let from_list = g
+            .sculpt_items
+            .iter()
+            .find(|it| {
+                it.id == sculpt_id_str || it.id.eq_ignore_ascii_case(&sculpt_id_str)
+            })
+            .and_then(|it| it.source_kiosk_id.clone());
+        (
+            from_list,
+            g.wallet.clone(),
+            Arc::clone(&g.sui_rpc),
+            g.tx_signer.clone(),
+            g.network_state.clone(),
+        )
+    };
+
+    let address = wallet.address;
+    if source_kiosk_id.is_none() {
+        match wallet.find_kiosk_id_for_sculpt(address, sculpt_id).await {
+            Ok(Some(kid)) => source_kiosk_id = Some(kid.to_string()),
+            Ok(None) => {}
+            Err(e) => return Err(format!("Could not resolve kiosk for sculpt: {}", e)),
+        }
+    }
+
+    let info = wallet
+        .get_printer_info(address)
+        .await
+        .map_err(|e| format!("Failed to get printer info: {}", e))?;
+    let cap_id = wallet
+        .get_printer_cap_id(address)
+        .await
+        .map_err(|e| format!("Failed to get PrinterCap ID: {}", e))?;
+    let printer_cap_id = App::parse_object_id(&cap_id, "printer cap ID")?;
+    let printer_object_id = App::parse_object_id(&info.id, "printer object ID")?;
+    let builder = crate::transactions::TransactionBuilder::new(
+        sui_rpc,
+        (*tx_signer).clone(),
+        address,
+        network_state,
+    )
+    .with_printer_eureka_package(&info.eureka_package_id);
+    {
+        let mut g = app.lock().await;
+        g.set_message(
+            MessageType::Info,
+            "Starting print job on-chain (required before completion)...".to_string(),
+        );
+    }
+
+    let start_result = if let Some(ref ks) = source_kiosk_id {
+        let kiosk_aid: Address = ks
+            .parse()
+            .map_err(|e| format!("Invalid kiosk object id: {}", e))?;
+        let kcap = wallet
+            .resolve_kiosk_owner_cap_object_id(address, kiosk_aid)
+            .await
+            .map_err(|e| format!("Failed to resolve KioskOwnerCap: {}", e))?;
+        builder
+            .start_print_job_from_kiosk(
+                printer_cap_id,
+                printer_object_id,
+                kiosk_aid,
+                kcap,
+                sculpt_id,
+            )
+            .await
+    } else {
+        builder
+            .start_print_job(printer_cap_id, printer_object_id, sculpt_id)
+            .await
+    };
+
+    match start_result {
+        Ok(tx_id) => {
+            let mut g = app.lock().await;
+            g.set_message(
+                MessageType::Success,
+                format!("Print job started on-chain (Tx: {})", tx_id),
+            );
+            g.print_output
+                .push(format!("[MOCK] start_print_job ok (Tx: {})", tx_id));
+            Ok(())
+        }
+        Err(e) => {
+            let user_friendly_error = parse_blockchain_error(&e.to_string(), "start print job");
+            let mut g = app.lock().await;
+            g.print_output.push(format!(
+                "[MOCK] start_print_job failed: {}",
+                user_friendly_error
+            ));
+            g.set_message(MessageType::Error, user_friendly_error.clone());
+            Err(user_friendly_error)
+        }
+    }
+}
+
 /// Complete print job using selected sculpt — **no** `App` mutex held across the transaction.
 pub(crate) async fn run_complete_print_job_from_sculpt_selection(
     app: Arc<Mutex<App>>,

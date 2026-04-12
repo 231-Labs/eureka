@@ -25,6 +25,22 @@ impl Wallet {
         Ok(all_sculpts)
     }
 
+    /// If `sculpt_id` lives in one of `owner`'s kiosks, return that kiosk's id.
+    pub async fn find_kiosk_id_for_sculpt(
+        &self,
+        owner: Address,
+        sculpt_id: Address,
+    ) -> Result<Option<Address>> {
+        let want = sculpt_id.to_string().to_lowercase();
+        for kiosk_id in self.get_owned_kiosk_ids(owner).await? {
+            let sculpts = self.get_sculpts_from_kiosk(kiosk_id).await?;
+            if sculpts.iter().any(|s| s.id.to_lowercase() == want) {
+                return Ok(Some(kiosk_id));
+            }
+        }
+        Ok(None)
+    }
+
     async fn get_owned_kiosk_ids(&self, address: Address) -> Result<Vec<Address>> {
         let mut kiosk_ids = Vec::new();
         let client = self.rpc.lock().await;
