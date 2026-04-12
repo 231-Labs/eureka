@@ -113,26 +113,10 @@ pub async fn run_mock_print_script(
             app_guard.script_status = ScriptStatus::Completed;
             app_guard.print_status = PrintStatus::Completed;
             app_guard.set_message(MessageType::Success, "Print completed successfully".to_string());
-            
-            // Try to update blockchain state
-            let should_update_blockchain = 
-                !app_guard.printer_id.eq("No Printer ID") && 
-                app_guard.sculpt_state.selected()
-                    .map(|index| index < app_guard.sculpt_items.len())
-                    .unwrap_or(false);
-            
-            if should_update_blockchain {
-                // Spawn a task to update blockchain status
-                let app_clone_for_completion = Arc::clone(&app);
-                drop(app_guard); // release lock before spawning
-                
-                tokio::spawn(async move {
-                    App::update_blockchain_on_completion(app_clone_for_completion).await;
-                });
-                
-                return Ok(true);
-            }
-            
+            // Do not call `update_blockchain_on_completion` here: that path uses `complete_print_job`,
+            // which requires an owned `Sculpt` (kiosk-listed sculpts fail PTB simulation). Real print
+            // (`run_print_script`) spawns completion itself; mock PrintJob flow (`T`) calls
+            // `run_transfer_completed_print_job` after this returns.
             Ok(true)
         },
         MockPrintScriptResult::PrinterNotConnected => {
