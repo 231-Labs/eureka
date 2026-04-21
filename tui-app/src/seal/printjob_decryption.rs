@@ -14,8 +14,7 @@ use std::str::FromStr;
 use std::path::Path;
 use std::collections::BTreeMap;
 use bcs;
-
-/// PrintJob-based decryption handler for TUI application
+/// PrintJob-based decryption aligned with on-chain `eureka::seal_approve` (requires PrintJob); SessionKey namespace is the **Eureka package**.
 pub struct PrintJobDecryptor {
     eureka_package_id: SealObjectID,
     sui_client: seal_sdk_rs::native_sui_sdk::sui_sdk::SuiClient,
@@ -23,18 +22,19 @@ pub struct PrintJobDecryptor {
 }
 
 impl PrintJobDecryptor {
-    /// Create new PrintJob decryptor instance
-    pub async fn new() -> Result<Self> {
-        // Configuration - Fresh deployment 2025-11-13
-        // IMPORTANT: Use EUREKA package ID for BOTH encryption and decryption
-        // Seal uses IBE (Identity-Based Encryption) where packageId is the namespace
-        // Since seal_approve is in Eureka package, we use Eureka as the namespace
-        let eureka_package_id_str = "0x8852004ffc677790d0ee729aa386286cbcbc7f4f1b4aa87c50213d2acb5d678f";
-        let eureka_package_id: SealObjectID = eureka_package_id_str.parse()?;
+    /// `rpc_url`: same network as the TUI (Seal SDK uses JSON-RPC). `eureka_package_id`: Eureka package for that network.
+    pub async fn new(rpc_url: String, eureka_package_id: &str) -> Result<Self> {
+        if eureka_package_id.is_empty() {
+            return Err(anyhow::anyhow!(
+                "Eureka package ID is not configured for this network; PrintJob decryption is unavailable."
+            ));
+        }
+        let eureka_package_id: SealObjectID = eureka_package_id
+            .parse()
+            .map_err(|e| anyhow::anyhow!("Invalid eureka package id: {}", e))?;
 
-        // Connect to Sui testnet
         let sui_client = SuiClientBuilder::default()
-            .build("https://fullnode.testnet.sui.io:443")
+            .build(&rpc_url)
             .await?;
 
         let seal_client = SealClient::new(sui_client.clone());
@@ -44,6 +44,23 @@ impl PrintJobDecryptor {
             sui_client,
             seal_client,
         })
+    }
+
+    pub async fn fetch_printer_shared_version(&self, printer_id: SuiObjectID) -> Result<u64> {
+        let mut options = SuiObjectDataOptions::new();
+        options.show_owner = true;
+        let printer_response = self
+            .sui_client
+            .read_api()
+            .get_object_with_options(printer_id, options)
+            .await?;
+        let printer_data = printer_response
+            .data
+            .ok_or_else(|| anyhow::anyhow!("Printer not found"))?;
+        match printer_data.owner {
+            Some(Owner::Shared { initial_shared_version }) => Ok(initial_shared_version.value()),
+            _ => Err(anyhow::anyhow!("Printer is not a shared object")),
+        }
     }
 
     /// Fetch sculpt_id from printer's PrintJob dynamic field
@@ -188,9 +205,10 @@ impl PrintJobDecryptor {
         }
     }
 
-    /// Download encrypted data from Walrus
+    /// Download encrypted blob from Walrus (same aggregator base URL as TUI model download).
     pub async fn download_encrypted_data(&self, blob_id: &str) -> Result<Vec<u8>> {
-        let url = format!("https://aggregator.walrus-testnet.walrus.space/v1/blobs/{}", blob_id);
+        let base = crate::constants::AGGREGATOR_URL.trim_end_matches('/');
+        let url = format!("{}/v1/blobs/{}", base, blob_id);
         let response = reqwest::get(&url).await?;
         
         if !response.status().is_success() {
@@ -216,6 +234,19 @@ impl PrintJobDecryptor {
         printer_cap_id: SuiObjectID,
         printer_version: u64,
     ) -> Result<Vec<u8>> {
+        // Seal ciphertext embeds the Eureka `package_id` used at encrypt time; it must match the
+        // app-configured package *and* the on-chain Printer/PrintJob deployment, or key fetch fails
+        // with e.g. "No keys available for object … full_id …".
+        let seal_package_id = encrypted.package_id;
+        if seal_package_id != self.eureka_package_id {
+            return Err(anyhow::anyhow!(
+                "Seal ciphertext is bound to Eureka package {}, but this app is configured for {}.\n\
+                 After redeploying Eureka you must re-encrypt and re-upload to Walrus with the new package; re-registering the printer alone cannot decrypt ciphertext from an older package.",
+                seal_package_id,
+                self.eureka_package_id
+            ));
+        }
+
         // Load wallet
         let wallet_path = std::env::var("HOME")
             .map_err(|_| anyhow::anyhow!("Cannot find HOME env var"))?
@@ -223,9 +254,9 @@ impl PrintJobDecryptor {
 
         let mut wallet = WalletContext::new(Path::new(&wallet_path))?;
         
-        // SessionKey uses Eureka package ID as the IBE namespace
+        // SessionKey IBE namespace must be the same `package_id` stored in the ciphertext.
         let session_key = SessionKey::new(
-            self.eureka_package_id,
+            seal_package_id,
             10,
             &mut wallet,
         )
@@ -244,7 +275,7 @@ impl PrintJobDecryptor {
         
         let id_hex = resource_id.strip_prefix("0x").unwrap_or(resource_id);
         let id_bytes = hex::decode(id_hex)
-            .map_err(|e| anyhow::anyhow!("Failed to decode hex ID: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to decode hex ID '{}': {}", id_hex, e))?;
         
         // Argument 0: _id (vector<u8>)
         let id_arg = builder.pure(id_bytes)?;
@@ -272,7 +303,7 @@ impl PrintJobDecryptor {
         // Call seal_approve in eureka module (no type arguments!)
         // entry fun seal_approve(_id, printer, printer_cap, ctx)
         builder.programmable_move_call(
-            self.eureka_package_id.into(),
+            seal_package_id.into(),
             Identifier::from_str("eureka")?,
             Identifier::from_str("seal_approve")?,
             vec![], // No type arguments needed!
@@ -296,6 +327,26 @@ impl PrintJobDecryptor {
             .map_err(|e| anyhow::anyhow!("Seal SDK decryption failed: {}", e))?;
 
         Ok(plaintext)
+    }
+
+    /// Decrypt already-downloaded Walrus ciphertext using printer + PrinterCap + on-chain PrintJob (`eureka::seal_approve`).
+    pub async fn decrypt_sealed_file_bytes(
+        &self,
+        seal_resource_id: &str,
+        encrypted_file_bytes: &[u8],
+        printer_id: SuiObjectID,
+        printer_cap_id: SuiObjectID,
+    ) -> Result<Vec<u8>> {
+        let printer_version = self.fetch_printer_shared_version(printer_id).await?;
+        let encrypted_object = self.parse_encrypted_object(encrypted_file_bytes)?;
+        self.decrypt_sculpt(
+            seal_resource_id,
+            encrypted_object,
+            printer_id,
+            printer_cap_id,
+            printer_version,
+        )
+        .await
     }
 
     /// Complete PrintJob-based decryption flow

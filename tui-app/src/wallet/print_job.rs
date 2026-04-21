@@ -1,92 +1,56 @@
-use std::collections::BTreeMap;
-use anyhow::{Result, anyhow};
-use sui_sdk::{
-    rpc_types::{
-        SuiMoveStruct,
-        SuiMoveValue,
-        SuiParsedData,
-    },
-    types::{
-        base_types::ObjectID,
-        dynamic_field::DynamicFieldName,
-        TypeTag,
-    },
-};
-use serde_json;
+use anyhow::{anyhow, Result};
+use futures::TryStreamExt;
+use sui_rpc::proto::sui::rpc::v2::GetObjectRequest;
+use sui_rpc::proto::sui::rpc::v2::ListDynamicFieldsRequest;
+use sui_sdk_types::Address;
+
+use super::move_json::{extract_print_task_from_object_json, prost_value_to_json};
+use super::read_mask;
 use super::client::Wallet;
-use super::utils::{extract_id_from_fields, extract_string_field, extract_address_field, extract_bool_field, extract_optional_u64_field};
-use crate::app::print_job::{PrintTask, TaskStatus};
-
-// Extract print task from blockchain data
-pub fn extract_print_task(fields: &BTreeMap<String, SuiMoveValue>) -> Result<PrintTask> {
-    let id = extract_id_from_fields(fields)
-        .ok_or_else(|| anyhow!("Failed to extract job ID"))?;
-    let sculpt_alias = extract_string_field(fields, "sculpt_alias")
-        .ok_or_else(|| anyhow!("Failed to extract sculpt_alias field"))?;
-    let sculpt_id = extract_address_field(fields, "sculpt_id")
-        .ok_or_else(|| anyhow!("Failed to extract sculpt_id field"))?;
-    let sculpt_structure = extract_string_field(fields, "sculpt_structure")
-        .ok_or_else(|| anyhow!("Failed to extract sculpt_structure field"))?;
-    let customer = extract_address_field(fields, "customer")
-        .ok_or_else(|| anyhow!("Failed to extract customer field"))?;
-    let paid_amount = extract_balance_value(fields)
-        .ok_or_else(|| anyhow!("Failed to extract paid_amount field"))?;
-    let is_completed = extract_bool_field(fields, "is_completed")
-        .ok_or_else(|| anyhow!("Failed to extract is_completed field"))?;
-    let start_time = extract_optional_u64_field(fields, "start_time");
-    let end_time = extract_optional_u64_field(fields, "end_time");
-
-    Ok(PrintTask {
-        id,
-        name: sculpt_alias,
-        sculpt_blob_id: sculpt_id,
-        sculpt_structure,
-        customer,
-        paid_amount,
-        start_time,
-        end_time,
-        status: if is_completed { TaskStatus::Completed } else { TaskStatus::Active },
-    })
-}
-
-// Helper method: extract balance value
-fn extract_balance_value(fields: &BTreeMap<String, SuiMoveValue>) -> Option<u64> {
-    if let Some(SuiMoveValue::String(value)) = fields.get("paid_amount") {
-        return value.parse::<u64>().ok();
-    }
-    None
-}
+use crate::app::print_job::PrintTask;
 
 impl Wallet {
-    // Get active print job from the blockchain for a printer
     pub async fn get_active_print_job(&self, printer_id: &str) -> Result<Option<PrintTask>> {
-        let printer_object_id = ObjectID::from_hex_literal(printer_id)
+        let printer_aid: Address = printer_id
+            .parse()
             .map_err(|e| anyhow!("Invalid printer ID format: {}", e))?;
 
-        // Use get_dynamic_field_object to get print_job
-        let response = self.client.read_api()
-            .get_dynamic_field_object(
-                printer_object_id,
-                DynamicFieldName {
-                    type_: TypeTag::Vector(Box::new(TypeTag::U8)),
-                    value: serde_json::Value::String("print_job".to_string()),
-                },
-            )
-            .await?;
+        let mut client = self.rpc.lock().await;
+        let list_req = ListDynamicFieldsRequest::default()
+            .with_parent(printer_aid.to_string())
+            .with_page_size(200)
+            // Paths are relative to `DynamicField` (not `dynamic_fields.*`). Include field_object.object_id as kiosk-style fallback.
+            .with_read_mask(read_mask("child_id,field_object.object_id"));
 
-            response.data
-            .and_then(|data| data.content)
-            .and_then(|content| match content {
-                SuiParsedData::MoveObject(move_obj) => Some(move_obj),
-                _ => None,
-            })
-            .and_then(|move_obj| match &move_obj.fields {
-                SuiMoveStruct::WithFields(fields) => Some(fields.clone()),
-                _ => None,
-            })
-            .map(|fields| extract_print_task(&fields))
-            .transpose()
-            .map_err(|e| anyhow!("Failed to extract print task: {}", e))
-            
+        let stream = client.list_dynamic_fields(list_req);
+        tokio::pin!(stream);
+        while let Some(df) = stream.try_next().await? {
+            let Some(cid) = df.child_id.clone() else { continue };
+            let Ok(child_aid) = cid.parse::<Address>() else { continue };
+
+            let resp = match client
+                .ledger_client()
+                .get_object(
+                    GetObjectRequest::new(&child_aid).with_read_mask(read_mask("json")),
+                )
+                .await
+            {
+                Ok(r) => r.into_inner(),
+                Err(_) => continue,
+            };
+
+            let obj = resp.object();
+            if let Some(j) = obj
+                .json
+                .as_ref()
+                .map(|v| prost_value_to_json(v.as_ref()))
+            {
+                if let Ok(task) = extract_print_task_from_object_json(&j) {
+                    return Ok(Some(task));
+                }
+            }
+        }
+
+        Ok(None)
     }
-} 
+}

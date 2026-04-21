@@ -2,9 +2,11 @@ use ratatui::widgets::ListState;
 use crate::wallet::{Wallet, SculptItem, PrinterInfo};
 use crate::utils::{setup_for_read, shorten_id, NetworkState, format_sui_balance};
 use anyhow::Result;
-use sui_sdk::SuiClient;
 use std::sync::Arc;
 use std::vec::Vec;
+use sui_crypto::ed25519::Ed25519PrivateKey;
+use sui_rpc::Client as GrpcClient;
+use tokio::sync::Mutex;
 use super::print_job::PrintTask;
 
 #[derive(Clone, PartialEq)]
@@ -40,7 +42,8 @@ pub enum PrintStatus {
 
 #[derive(Clone)]
 pub struct App {
-    pub sui_client: Arc<SuiClient>,
+    pub sui_rpc: Arc<Mutex<GrpcClient>>,
+    pub tx_signer: Arc<Ed25519PrivateKey>,
     pub wallet: Wallet,
     pub wallet_address: String,
     pub printer_id: String,
@@ -74,12 +77,11 @@ impl App {
     pub async fn new() -> Result<App> {
         let network_state = NetworkState::new();
         
-        // Initialize SuiClient
-        let (client, address) = setup_for_read(&network_state).await?;
-        let sui_client = Arc::new(client);
-        
-        // Initialize Wallet
-        let wallet = Wallet::new(&network_state, Arc::clone(&sui_client), address).await;
+        let (rpc, address, signer) = setup_for_read(&network_state).await?;
+        let sui_rpc = Arc::clone(&rpc);
+        let tx_signer = Arc::new(signer);
+
+        let wallet = Wallet::new(&network_state, rpc, address).await;
         let wallet_address = shorten_id(&wallet.get_active_address().await?.to_string());
         
         // Get balance and printer id
@@ -93,6 +95,7 @@ impl App {
                 PrinterInfo {
                     id: "No Printer ID".to_string(),
                     pool_balance: 0,
+                    eureka_package_id: String::new(),
                 }
             }
         };
@@ -106,13 +109,14 @@ impl App {
         
         // Initialize with empty sculpts, will load asynchronously
         let mut app = App {
-            sui_client,
+            sui_rpc,
+            tx_signer,
             wallet,
             wallet_address,
             printer_id: printer_info.id.clone(),
             is_online: false,
             sculpt_state: ListState::default(),
-            tasks: PrintTask::new_mock_tasks(),
+            tasks: Vec::new(),
             tasks_state: ListState::default(),
             is_confirming: false,
             is_harvesting: false,
@@ -159,6 +163,18 @@ impl App {
     pub fn clear_error(&mut self) {
         self.error_message = None;
         self.success_message = None;
+    }
+
+    /// Keep `ListState` selection in range when `tasks` changes (online task list).
+    pub fn clamp_tasks_list_state(&mut self) {
+        let len = self.tasks.len();
+        if len == 0 {
+            self.tasks_state.select(None);
+            return;
+        }
+        let cur = self.tasks_state.selected().unwrap_or(0);
+        let capped = cur.min(len - 1);
+        self.tasks_state.select(Some(capped));
     }
 
     pub fn set_message(&mut self, message_type: MessageType, message: String) {
@@ -246,6 +262,7 @@ impl App {
                 }
             }
         }
+        self.clamp_tasks_list_state();
         Ok(())
     }
 }

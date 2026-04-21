@@ -1,7 +1,5 @@
 pub mod decryption;
 pub mod printjob_decryption;
-pub mod types;
 
-pub use decryption::SealDecryptor;
+pub use decryption::is_file_encrypted;
 pub use printjob_decryption::PrintJobDecryptor;
-

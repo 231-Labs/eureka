@@ -3,8 +3,9 @@ module eureka::print_job {
     use std::string::{ String };
     use sui::{
         sui::SUI,
-        balance::{ Self, Balance }, 
-        clock::{ Self }
+        balance::{ Self, Balance },
+        clock::{ Self },
+        coin,
     };
   
     /// === Structs ===
@@ -79,6 +80,29 @@ module eureka::print_job {
         balance::split(&mut print_job.paid_amount, amount)
     }
 
+    /// Destroy a cancelled `PrintJob` and refund escrowed SUI to `customer`.
+    public(package) fun cancel_job_destroy(job: PrintJob, ctx: &mut TxContext) {
+        let PrintJob {
+            id,
+            sculpt_alias: _,
+            sculpt_id: _,
+            sculpt_structure: _,
+            seal_resource_id: _,
+            customer,
+            printer_id: _,
+            is_completed: _,
+            paid_amount,
+            start_time: _,
+            end_time: _,
+        } = job;
+        object::delete(id);
+        if (balance::value(&paid_amount) > 0) {
+            let coin = coin::from_balance(paid_amount, ctx);
+            transfer::public_transfer(coin, customer);
+        } else {
+            balance::destroy_zero(paid_amount);
+        };
+    }
 
     /// === Getter Functions ===
     

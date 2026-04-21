@@ -32,12 +32,11 @@ impl App {
     }
 
     async fn do_update_network(&mut self) -> Result<()> {
-        // get new SuiClient and address
-        let (client, address) = setup_for_read(&self.network_state).await?;
-        self.sui_client = Arc::new(client);
-        
-        // update Wallet
-        self.wallet = crate::wallet::Wallet::new(&self.network_state, Arc::clone(&self.sui_client), address).await;
+        let (rpc, address, signer) = setup_for_read(&self.network_state).await?;
+        self.sui_rpc = Arc::clone(&rpc);
+        self.tx_signer = Arc::new(signer);
+
+        self.wallet = crate::wallet::Wallet::new(&self.network_state, rpc, address).await;
         self.wallet_address = crate::utils::shorten_id(&self.wallet.get_active_address().await?.to_string());
         self.sui_balance = self.wallet.get_sui_balance(self.wallet.get_active_address().await?).await?;
         self.wal_balance = self.wallet.get_walrus_balance(self.wallet.get_active_address().await?).await?;
@@ -49,6 +48,7 @@ impl App {
                 crate::wallet::PrinterInfo {
                     id: "No Printer ID".to_string(),
                     pool_balance: 0,
+                    eureka_package_id: String::new(),
                 }
             }
         };
