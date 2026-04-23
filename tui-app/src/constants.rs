@@ -26,7 +26,9 @@ pub const SUI_CLOCK_OBJECT_ID: &str = "0x6";
 pub const PRINT_JOB_POLL_INTERVAL_SECS: u64 = 10;
 pub const RETRY_INTERVAL_SECS: u64 = 5;
 pub const GCODE_CHECK_INTERVAL_MILLIS: u64 = 500;
-pub const GCODE_WAIT_ATTEMPTS: u32 = 40;
+/// Poll attempts while waiting for `Gcode-Transmit/main/test.gcode` to appear after PrusaSlicer starts.
+/// 1200 × 500ms ≈ 10 minutes (slicing on a Pi can exceed the old limit of ~20s).
+pub const GCODE_WAIT_ATTEMPTS: u32 = 1200;
 pub const PRINT_OUTPUT_MAX_LINES: usize = 1000;
 pub const SCULPT_LOAD_DELAY_MILLIS: u64 = 100;
 

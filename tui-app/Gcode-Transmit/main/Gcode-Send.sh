@@ -13,6 +13,10 @@ prusa-slicer --export-gcode --load Ender-3_set.ini --output test.gcode "$PARENT_
 echo $! > "$SCRIPT_DIR/Gcode-Send-PID.pid"
 # echo $! > Gcode-Send-PID.pid
 wait $!
+if [ ! -f test.gcode ]; then
+  echo "Slicer did not produce test.gcode (check prusa-slicer, Ender-3_set.ini, and $PARENT_DIR/test.stl)"
+  exit 2
+fi
 rm -rf "$PARENT_DIR/test.stl"
 
 if SERIAL_BIN="$(eureka_find_serial_bin "$SCRIPT_DIR")"; then
@@ -35,5 +39,7 @@ fi
 echo $! > "$SCRIPT_DIR/Gcode-Send-PID.pid"
 # echo $! > Gcode-Send-PID.pid
 wait $!
-rm -rf test.gcode
+if [ -z "${EUREKA_KEEP_GCODE:-}" ]; then
+  rm -rf test.gcode
+fi
 
