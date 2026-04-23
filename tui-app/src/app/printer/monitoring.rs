@@ -1,5 +1,6 @@
 use crate::app::core::App;
 use crate::constants::{GCODE_CHECK_INTERVAL_MILLIS, GCODE_WAIT_ATTEMPTS};
+use crate::utils::crate_root;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
@@ -26,8 +27,10 @@ impl App {
     pub async fn setup_gcode_monitoring(app: Arc<Mutex<App>>) {
         let app_clone_for_monitor = Arc::clone(&app);
         let _gcode_monitor_handle = tokio::spawn(async move {
-            let current_dir = std::env::current_dir().unwrap_or_default();
-            let gcode_path = current_dir.join("Gcode-Transmit").join("main").join("test.gcode");
+            let gcode_path = crate_root()
+                .join("Gcode-Transmit")
+                .join("main")
+                .join("test.gcode");
             
             let mut app_lock = app_clone_for_monitor.lock().await;
             app_lock.print_output.push(format!("[GCODE] Monitoring file: {}", gcode_path.display()));

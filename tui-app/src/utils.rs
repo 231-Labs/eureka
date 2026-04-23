@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::path::PathBuf;
 use std::sync::Arc;
 use sui_sdk_types::Address;
 use sui_rpc::Client as GrpcClient;
@@ -7,6 +8,12 @@ use tokio::sync::Mutex;
 use crate::constants::{NETWORKS, NETWORK_PACKAGE_IDS, NetworkPackageIds, SUI_DECIMALS};
 use crate::wallet::load_active_signer;
 use dirs::home_dir;
+
+/// `tui-app/` directory at compile time. Use for `Gcode-Transmit`, `mock_print.stl`, etc., so paths stay
+/// correct when the process cwd is `target/debug` or elsewhere.
+pub fn crate_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
 
 pub fn shorten_id(id: &str) -> String {
     if id.len() > 16 {

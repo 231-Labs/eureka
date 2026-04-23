@@ -1,5 +1,6 @@
 use crate::app::core::App;
 use crate::constants::AGGREGATOR_URL;
+use crate::utils::crate_root;
 use crate::seal::{is_file_encrypted, PrintJobDecryptor};
 use crate::app::printer::mock::{run_mock_print_script, MockPrintScriptResult};
 use anyhow::Result;
@@ -20,13 +21,13 @@ async fn download_model_isolated(
 ) -> Result<Vec<String>> {
     let mut log = Vec::new();
     let url = format!("{}/v1/blobs/{}", AGGREGATOR_URL, blob_id);
-    let current_dir = std::env::current_dir()?;
-    let temp_path = current_dir.join("test.stl");
-    let final_path = current_dir.join("Gcode-Transmit").join("test.stl");
+    let root = crate_root();
+    let temp_path = root.join("test.stl");
+    let final_path = root.join("Gcode-Transmit").join("test.stl");
 
     log.push(format!("[LOG] Downloading model from: {}", url));
 
-    let gcode_dir = current_dir.join("Gcode-Transmit");
+    let gcode_dir = root.join("Gcode-Transmit");
     if !Path::new(&gcode_dir).exists() {
         log.push(format!("[LOG] Creating directory: {}", gcode_dir.display()));
         fs::create_dir_all(&gcode_dir)?;
@@ -503,17 +504,8 @@ impl App {
                         }
 
                         // Save decrypted file for mock printing and testing
-                        let current_dir = match std::env::current_dir() {
-                            Ok(dir) => dir,
-                            Err(e) => {
-                                let mut app = app_clone.lock().await;
-                                app.set_message(crate::app::MessageType::Error, format!("Failed to get current directory: {}", e));
-                                return;
-                            }
-                        };
-
                         // Save to mock_print.stl for mock printing
-                        let mock_stl_path = current_dir.join("mock_print.stl");
+                        let mock_stl_path = crate_root().join("mock_print.stl");
                         if let Err(e) = std::fs::write(&mock_stl_path, &plaintext) {
                             let mut app = app_clone.lock().await;
                             app.set_message(crate::app::MessageType::Error, format!("Failed to save decrypted STL: {}", e));

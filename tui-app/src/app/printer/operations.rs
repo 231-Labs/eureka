@@ -1,6 +1,7 @@
 use crate::app::core::App;
 use crate::app::{MessageType, ScriptStatus, PrintStatus};
 use crate::constants::PRINT_OUTPUT_MAX_LINES;
+use crate::utils::crate_root;
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -14,19 +15,11 @@ impl App {
             app_guard.print_output.push("[TEST] Starting slicing test...".to_string());
         }
         
-        let current_dir = match std::env::current_dir() {
-            Ok(dir) => dir,
-            Err(e) => {
-                let error_msg = format!("Failed to get current directory: {}", e);
-                let mut app_locked = app.lock().await;
-                app_locked.print_output.push(format!("[TEST] ERROR: {}", error_msg));
-                return Err(error_msg);
-            }
-        };
+        let root = crate_root();
         
         // Use mock_print.stl directly instead of test_decryption/decrypted.stl
-        let input_stl = current_dir.join("mock_print.stl");
-        let output_gcode = current_dir.join("output.gcode");
+        let input_stl = root.join("mock_print.stl");
+        let output_gcode = root.join("output.gcode");
         
         // Check if input file exists
         if !input_stl.exists() {
@@ -42,7 +35,7 @@ impl App {
         }
         
         // Get PrusaSlicer config
-        let transmit_dir = current_dir.join("Gcode-Transmit").join("main");
+        let transmit_dir = root.join("Gcode-Transmit").join("main");
         let config_file = transmit_dir.join("Ender-3_set.ini");
         
         if !config_file.exists() {
@@ -128,19 +121,9 @@ impl App {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<bool, String>>(1);
         let app_clone = Arc::clone(&app);
         
-        let current_dir = match std::env::current_dir() {
-            Ok(dir) => dir,
-            Err(e) => {
-                let error_msg = format!("Failed to get current directory: {}", e);
-                let mut app_locked = app_clone.lock().await;
-                app_locked.print_output.push(format!("[ERROR] {}", error_msg));
-                app_locked.script_status = ScriptStatus::Failed(error_msg.clone());
-                app_locked.set_message(MessageType::Error, error_msg.clone());
-                return Err(error_msg);
-            }
-        };
+        let root = crate_root();
         
-        let transmit_dir = current_dir.join("Gcode-Transmit");
+        let transmit_dir = root.join("Gcode-Transmit");
         {
             if !transmit_dir.exists() || !transmit_dir.is_dir() {
                 let error_msg = format!("Gcode-Transmit directory does not exist at {}", transmit_dir.display());
@@ -184,8 +167,7 @@ impl App {
         App::setup_gcode_monitoring(Arc::clone(&app_clone)).await;
         
         tokio::spawn(async move {
-            let current_dir = std::env::current_dir().unwrap_or_default();
-            let script_path = current_dir.join("Gcode-Transmit").join("Gcode-Process.sh");
+            let script_path = crate_root().join("Gcode-Transmit").join("Gcode-Process.sh");
             let script_path_str = script_path.to_string_lossy();
             let command = format!("{} --print", script_path_str);
             
@@ -301,8 +283,7 @@ impl App {
     pub async fn run_stop_script(&mut self) -> Result<()> {
         self.set_message(MessageType::Info, "Stopping print...".to_string());
         
-        let current_dir = std::env::current_dir()?;
-        let script_path = current_dir.join("Gcode-Transmit").join("Gcode-Process.sh");
+        let script_path = crate_root().join("Gcode-Transmit").join("Gcode-Process.sh");
         
         if !script_path.exists() {
             let error_msg = format!("Script file does not exist: {}", script_path.display());
