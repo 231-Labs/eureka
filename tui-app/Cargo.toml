@@ -2,6 +2,7 @@
 name = "tui-app"
 version = "0.1.0"
 edition = "2021"
+default-run = "tui-app"
 
 # Examples still target the old monorepo `sui-sdk`; enable only if you add those deps back.
 [features]
