@@ -1,4 +1,5 @@
 use crate::app::core::App;
+use crate::app::print_job::PrintTask;
 use crate::constants::AGGREGATOR_URL;
 use crate::utils::crate_root;
 use crate::seal::{is_file_encrypted, PrintJobDecryptor};
@@ -69,6 +70,55 @@ async fn download_model_isolated(
 
     fs::rename(&temp_path, &final_path).map_err(|e| anyhow::anyhow!("Failed to move 3D model: {}", e))?;
     Ok(log)
+}
+
+/// Walrus blob id for the STL and effective Seal id — prefer on-chain `Sculpt.structure` (same source as
+/// `PrintJobDecryptor::decrypt_printjob_sculpt`) so online download matches decryption; fall back to
+/// `PrintJob.sculpt_structure` only when we cannot query the Sculpt (no printer id).
+async fn walrus_blob_and_seal_for_online_task(
+    task: &PrintTask,
+    rpc: &str,
+    eureka_package_id: &str,
+    printer_id: &str,
+    log: &mut Vec<String>,
+) -> Result<(String, Option<String>), anyhow::Error> {
+    if printer_id == "No Printer ID" || task.sculpt_blob_id.trim().is_empty() {
+        let s = task.sculpt_structure.trim();
+        if s.is_empty() {
+            return Err(anyhow::anyhow!(
+                "PrintJob has no usable Walrus blob id (sculpt_structure empty and no printer to read Sculpt on-chain)"
+            ));
+        }
+        log.push(
+            "[LOG] Using PrintJob.sculpt_structure as Walrus blob id (no printer to resolve Sculpt on-chain)"
+                .to_string(),
+        );
+        return Ok((task.sculpt_structure.clone(), task.seal_resource_id.clone()));
+    }
+
+    let sculpt_id = SuiObjectID::from_hex_literal(task.sculpt_blob_id.trim())
+        .map_err(|e| anyhow::anyhow!("Invalid PrintJob.sculpt_id (sculpt object id): {}", e))?;
+    let printer_oid = SuiObjectID::from_hex_literal(printer_id.trim())
+        .map_err(|e| anyhow::anyhow!("Invalid printer_id: {}", e))?;
+
+    let decryptor = PrintJobDecryptor::new(rpc.to_string(), eureka_package_id).await?;
+    let (structure, seal_on_sculpt, _) = decryptor
+        .fetch_sculpt_and_objects(sculpt_id, printer_oid)
+        .await?;
+
+    log.push(format!(
+        "[LOG] Resolved Walrus STL blob from on-chain Sculpt.structure (prefix {})",
+        structure.chars().take(16).collect::<String>()
+    ));
+
+    if !task.sculpt_structure.is_empty() && task.sculpt_structure != structure {
+        log.push(format!(
+            "[LOG] Note: PrintJob.sculpt_structure differs from Sculpt.structure; using chain value for download."
+        ));
+    }
+
+    let seal = task.seal_resource_id.clone().or(seal_on_sculpt);
+    Ok((structure, seal))
 }
 
 async fn decrypt_model_with_printjob(
@@ -282,7 +332,6 @@ impl App {
                     app.set_message(crate::app::MessageType::Info, format!("Processing print job: {}", task.name));
                 }
                 
-                let seal = task.seal_resource_id.as_deref();
                 let (rpc, eureka_pkg) = {
                     let g = app_clone.lock().await;
                     (
@@ -294,20 +343,47 @@ impl App {
                     )
                 };
 
-                let printer_for_seal: Option<(String, String)> = if seal.is_some() {
-                    let (wallet_address, printer_id) = {
-                        let g = app_clone.lock().await;
-                        if g.printer_id == "No Printer ID" {
-                            drop(g);
+                let printer_id = {
+                    let g = app_clone.lock().await;
+                    g.printer_id.clone()
+                };
+
+                let mut resolve_logs = Vec::new();
+                let (walrus_blob_id, seal_effective) =
+                    match walrus_blob_and_seal_for_online_task(
+                        &task,
+                        &rpc,
+                        &eureka_pkg,
+                        &printer_id,
+                        &mut resolve_logs,
+                    )
+                    .await
+                    {
+                        Ok(x) => x,
+                        Err(e) => {
                             let mut app = app_clone.lock().await;
+                            app.print_output.append(&mut resolve_logs);
                             app.set_message(
                                 crate::app::MessageType::Error,
-                                "This task uses an encrypted model; a connected printer is required.".to_string(),
+                                format!("Could not resolve model blob from chain: {}", e),
                             );
                             return;
                         }
-                        (g.wallet.address, g.printer_id.clone())
                     };
+
+                let seal_for_download = seal_effective.as_deref();
+
+                let printer_for_seal: Option<(String, String)> = if seal_for_download.is_some() {
+                    if printer_id == "No Printer ID" {
+                        let mut app = app_clone.lock().await;
+                        app.print_output.append(&mut resolve_logs);
+                        app.set_message(
+                            crate::app::MessageType::Error,
+                            "This task uses an encrypted model; a connected printer is required.".to_string(),
+                        );
+                        return;
+                    }
+                    let wallet_address = { let g = app_clone.lock().await; g.wallet.address };
                     let cap_id = match app_clone
                         .lock()
                         .await
@@ -318,6 +394,7 @@ impl App {
                         Ok(c) => c,
                         Err(e) => {
                             let mut app = app_clone.lock().await;
+                            app.print_output.append(&mut resolve_logs);
                             app.set_message(
                                 crate::app::MessageType::Error,
                                 format!("Could not load PrinterCap: {}", e),
@@ -325,14 +402,14 @@ impl App {
                             return;
                         }
                     };
-                    Some((printer_id, cap_id))
+                    Some((printer_id.clone(), cap_id))
                 } else {
                     None
                 };
 
                 match download_model_isolated(
-                    &task.sculpt_structure,
-                    seal,
+                    &walrus_blob_id,
+                    seal_for_download,
                     &rpc,
                     &eureka_pkg,
                     printer_for_seal,
@@ -341,6 +418,7 @@ impl App {
                 {
                     Ok(mut lines) => {
                         let mut app = app_clone.lock().await;
+                        app.print_output.append(&mut resolve_logs);
                         app.print_output.append(&mut lines);
                         app.set_message(
                             crate::app::MessageType::Success,
@@ -349,6 +427,7 @@ impl App {
                     }
                     Err(e) => {
                         let mut app = app_clone.lock().await;
+                        app.print_output.append(&mut resolve_logs);
                         app.set_message(
                             crate::app::MessageType::Error,
                             format!("Failed to download task model: {}", e),

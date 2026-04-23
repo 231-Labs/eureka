@@ -262,8 +262,9 @@ pub fn extract_print_task_from_object_json(root: &Json) -> Result<crate::app::pr
     let id = extract_id_from_fields(&fields).ok_or_else(|| anyhow!("job id"))?;
     let name = extract_string_field(&fields, "sculpt_alias").ok_or_else(|| anyhow!("sculpt_alias"))?;
     let sculpt_id = extract_address_field(&fields, "sculpt_id").ok_or_else(|| anyhow!("sculpt_id"))?;
+    // On-chain type is `option::Option<String>`; gRPC JSON may be `{ "Some": "..." }` or a plain string.
     let sculpt_structure =
-        extract_string_field(&fields, "sculpt_structure").ok_or_else(|| anyhow!("sculpt_structure"))?;
+        extract_optional_string_field(&fields, "sculpt_structure").unwrap_or_default();
     let customer = extract_address_field(&fields, "customer").ok_or_else(|| anyhow!("customer"))?;
     let paid_amount = extract_balance_value(&fields).ok_or_else(|| anyhow!("paid_amount"))?;
     let is_completed =
