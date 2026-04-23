@@ -17,7 +17,6 @@ mod app;
 mod constants;
 mod utils;
 mod wallet;
-mod blockchain;
 mod model;
 
 use constants::{PRINT_JOB_POLL_INTERVAL_SECS, RETRY_INTERVAL_SECS, SCULPT_LOAD_DELAY_MILLIS};
@@ -25,7 +24,7 @@ mod ui;
 mod transactions;
 mod seal;
 
-use app::{App, MessageType, TaskStatus};
+use app::{App, MessageType, PrintStatus, ScriptStatus, TaskStatus};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -230,6 +229,22 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 }
                             }
                         }
+                        KeyCode::Char('j') | KeyCode::Char('J') => {
+                            if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
+                                if app_guard.printer_id == "No Printer ID" {
+                                    app_guard.set_message(
+                                        MessageType::Error,
+                                        "Register a printer before clearing a stuck PrintJob.".to_string(),
+                                    );
+                                } else {
+                                    drop(app_guard);
+                                    let app_clone = Arc::clone(&app_arc);
+                                    tokio::spawn(async move {
+                                        let _ = crate::app::printer::blockchain::run_clear_stuck_print_job_from_selection(app_clone).await;
+                                    });
+                                }
+                            }
+                        }
                         KeyCode::Char('t') => {
                             if !app_guard.is_confirming && !app_guard.is_harvesting && !app_guard.is_switching_network {
                                 app_guard.print_output.push("[INFO] Starting mock print mode (T key pressed)".to_string());
@@ -298,6 +313,7 @@ fn start_sculpt_loading_task(app: Arc<Mutex<App>>) {
                         blob_id: String::new(),
                         printed_count: 0,
                         id: String::new(),
+                        source_kiosk_id: None,
                         is_encrypted: false,
                         seal_resource_id: None,
                     }];
@@ -321,20 +337,55 @@ fn start_print_job_polling(app: Arc<Mutex<App>>) {
     tokio::spawn(async move {
         let poll_interval = time::Duration::from_secs(PRINT_JOB_POLL_INTERVAL_SECS);
         let mut interval = time::interval(poll_interval);
-        
+
         loop {
             interval.tick().await;
-            let mut app_guard = app.lock().await;
-            
-            if app_guard.is_online && app_guard.printer_id != "No Printer ID" {
-                let has_active_task = app_guard.tasks
-                .iter()
-                .any(|task| !task
-                .is_completed());
-                if !has_active_task {
-                    if let Err(e) = app_guard.update_print_tasks().await {
-                        println!("Failed to update print tasks: {:?}", e);
+
+            let (should_poll, printer_id, wallet) = {
+                let g = app.lock().await;
+                let has_active = g.tasks.iter().any(|task| !task.is_completed());
+                let poll = g.is_online && g.printer_id != "No Printer ID" && !has_active;
+                (
+                    poll,
+                    g.printer_id.clone(),
+                    g.wallet.clone(),
+                )
+            };
+
+            if !should_poll {
+                continue;
+            }
+
+            let fetch = wallet.get_active_print_job(&printer_id);
+            match fetch.await {
+                Ok(Some(task)) => {
+                    let mut g = app.lock().await;
+                    let task_exists = g.tasks.iter().any(|t| t.id == task.id);
+                    if !task_exists {
+                        g.tasks.insert(0, task.clone());
+                        g.tasks_state.select(Some(0));
+                        g.print_status = PrintStatus::Idle;
+                        g.script_status = ScriptStatus::Idle;
+                        g.set_message(MessageType::Success, format!("Found print task: {}", task.name));
+                    } else if let Some(existing) = g.tasks.iter_mut().find(|t| t.id == task.id) {
+                        *existing = task.clone();
+                        if matches!(g.script_status, ScriptStatus::Running) {
+                            g.print_status = PrintStatus::Printing;
+                        }
                     }
+                }
+                Ok(None) => {
+                    let mut g = app.lock().await;
+                    g.print_status = PrintStatus::Idle;
+                    g.script_status = ScriptStatus::Idle;
+                }
+                Err(e) => {
+                    println!("Failed to update print tasks: {:?}", e);
+                    let mut g = app.lock().await;
+                    g.set_message(
+                        MessageType::Error,
+                        format!("Failed to get print task: {}", e),
+                    );
                 }
             }
         }

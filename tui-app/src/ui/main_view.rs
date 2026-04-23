@@ -6,7 +6,9 @@ use ratatui::{
     Frame,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
+use crate::app::print_job::TaskStatus;
 use crate::app::App;
+use crate::utils::format_sui_balance;
 use super::status_display::{render_online_active_task, render_offline_printer};
 use super::animations::{render_eureka_animation, render_tech_animation, render_ambient_noise};
 use super::ascii_arts::UiConstants;
@@ -226,7 +228,7 @@ fn render_balance_and_rewards(f: &mut Frame, app: &App, area: Rect, primary_colo
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(primary_color));
     
-    let sui_text = Paragraph::new(format!("{:.2} SUI", app.sui_balance as f64 / 1_000_000_000.0))
+    let sui_text = Paragraph::new(format_sui_balance(app.sui_balance))
         .block(sui_block)
         .style(Style::default().fg(secondary_color))
         .alignment(Alignment::Left);
@@ -304,12 +306,17 @@ fn render_task_list(
     dim_color: Color,
     _accent_color: Color
 ) {
-    // Online mode task list
-    let completed_tasks: Vec<ListItem> = app.tasks
+    // Online mode: list every task so `ListState` matches `next_item` / `previous_item`.
+    let task_items: Vec<ListItem> = app
+        .tasks
         .iter()
-        .filter(|task| task.is_completed())
         .map(|task| {
+            let (tag, tag_color) = match task.status {
+                TaskStatus::Active => ("● ACTIVE ", Color::Yellow),
+                TaskStatus::Completed => ("✓ DONE  ", dim_color),
+            };
             ListItem::new(Line::from(vec![
+                Span::styled(tag, Style::default().fg(tag_color)),
                 Span::styled("[", Style::default().fg(dim_color)),
                 Span::styled(task.format_end_time(), Style::default().fg(Color::Cyan)),
                 Span::styled("] ", Style::default().fg(dim_color)),
@@ -323,9 +330,9 @@ fn render_task_list(
         })
         .collect();
 
-    let tasks_list = List::new(completed_tasks)
+    let tasks_list = List::new(task_items)
         .block(Block::default()
-            .title("TASKS HISTORY")
+            .title("TASKS (ACTIVE + HISTORY)")
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(primary_color)))
@@ -489,6 +496,13 @@ fn render_help_controls(f: &mut Frame, app: &App, area: Rect, dim_color: Color, 
                 Span::styled("E", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
                 Span::raw(" Stop Printing"),
                 Span::raw("   "),
+            ]),
+            Line::from(vec![
+                Span::styled("J", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+                Span::raw(" CLEAR STUCK PRINTJOB (DEV)"),
+                Span::raw("   "),
+                Span::styled("T", Style::default().fg(highlight_color).add_modifier(Modifier::BOLD)),
+                Span::raw(" MOCK PRINT / DECRYPT TEST"),
             ]),
         ]
     };

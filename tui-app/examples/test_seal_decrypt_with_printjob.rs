@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
     // IMPORTANT: Use EUREKA package ID for BOTH encryption and decryption
     // Seal uses IBE (Identity-Based Encryption) where packageId is the namespace
     // Since seal_approve is in Eureka package, we use Eureka as the namespace
-    let eureka_package_id_str = "0x8852004ffc677790d0ee729aa386286cbcbc7f4f1b4aa87c50213d2acb5d678f";
+    let eureka_package_id_str = "0x0be58b29c27063157169e31f9f86f360cf7b05bc5d755bc92d88ea5120dd88a2";
     
     // Key Servers (matching frontend config)
     let key_server_strs = vec![

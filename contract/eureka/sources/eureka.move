@@ -14,15 +14,18 @@ module eureka::eureka {
     };
     use eureka::print_job::{
         PrintJob,
-        mutate_print_job_status,
-        mutate_print_job_start_time,
-        get_print_job_status,
+        cancel_job_destroy,
+        create_print_job,
+        get_print_job_customer,
         get_print_job_fees,
-        get_print_job_start_time,
-        mutate_print_job_end_time,
         get_print_job_id,
         get_print_job_printer_id,
-        create_print_job,
+        get_print_job_sculpt_id,
+        get_print_job_start_time,
+        get_print_job_status,
+        mutate_print_job_end_time,
+        mutate_print_job_start_time,
+        mutate_print_job_status,
     };
     use archimeters::sculpt::{
         Sculpt,
@@ -90,6 +93,13 @@ module eureka::eureka {
         printer_id: ID,
         customer: address,
         paid_amount: u64,
+    }
+
+    /// Emitted when a stuck `PrintJob` is cleared via [`clear_stuck_print_job`] or [`clear_stuck_print_job_from_kiosk`].
+    public struct PrintJobCleared has copy, drop {
+        printer_id: ID,
+        customer: address,
+        sculpt_id: ID,
     }
 
     /// Emitted when a printer's status is updated
@@ -367,6 +377,98 @@ module eureka::eureka {
         let print_job = dof::remove<vector<u8>, PrintJob>(&mut printer.id, b"print_job");
 
         print_job
+    }
+
+    /// Completes job, detaches PrintJob, transfers it to sender after verifying `sculpt` matches the PrintJob.
+    #[allow(lint(self_transfer))]
+    public fun complete_print_job(
+        printer_cap: &PrinterCap,
+        printer: &mut Printer,
+        sculpt: &Sculpt<ATELIER>,
+        clock: &clock::Clock,
+        ctx: &mut TxContext,
+    ) {
+        assert!(dof::exists_(&printer.id, b"print_job"), EPrintJobNotFound);
+        let expected = get_print_job_sculpt_id(dof::borrow(&printer.id, b"print_job"));
+        assert!(object::id(sculpt) == expected, ENotAuthorized);
+        let job = completed_and_detach_print_job(printer_cap, printer, clock, ctx);
+        transfer::public_transfer(job, tx_context::sender(ctx));
+    }
+
+    /// Completes job, detaches PrintJob, transfers it to sender (no sculpt check).
+    #[allow(lint(self_transfer))]
+    public fun transfer_completed_print_job(
+        printer_cap: &PrinterCap,
+        printer: &mut Printer,
+        clock: &clock::Clock,
+        ctx: &mut TxContext,
+    ) {
+        let job = completed_and_detach_print_job(printer_cap, printer, clock, ctx);
+        transfer::public_transfer(job, tx_context::sender(ctx));
+    }
+
+    /// Clears an in-flight `PrintJob` from the printer (test / recovery). Refunds job escrow to the customer and
+    /// removes the printer from the sculpt whitelist. Sender must be the **printer owner** and **sculpt owner**.
+    public fun clear_stuck_print_job(
+        printer_cap: &PrinterCap,
+        printer: &mut Printer,
+        sculpt: &mut Sculpt<ATELIER>,
+        ctx: &mut TxContext,
+    ) {
+        assert!(tx_context::sender(ctx) == printer.owner, ENotPrinterOwner);
+        assert!(printer_cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
+        assert!(dof::exists_(&printer.id, b"print_job"), EPrintJobNotFound);
+
+        let expected_sculpt = get_print_job_sculpt_id(dof::borrow(&printer.id, b"print_job"));
+        assert!(object::id(sculpt) == expected_sculpt, ENotAuthorized);
+
+        let printer_id = object::uid_to_inner(&printer.id);
+        archimeters::sculpt::remove_printer_from_whitelist(sculpt, printer_id, ctx);
+
+        let job = dof::remove<vector<u8>, PrintJob>(&mut printer.id, b"print_job");
+        let customer = get_print_job_customer(&job);
+        let sculpt_id = get_print_job_sculpt_id(&job);
+        cancel_job_destroy(job, ctx);
+
+        event::emit(PrintJobCleared {
+            printer_id,
+            customer,
+            sculpt_id,
+        });
+    }
+
+    /// Kiosk variant of [`clear_stuck_print_job`].
+    public fun clear_stuck_print_job_from_kiosk(
+        printer_cap: &PrinterCap,
+        printer: &mut Printer,
+        kiosk: &mut Kiosk,
+        kiosk_cap: &KioskOwnerCap,
+        sculpt_id: ID,
+        ctx: &mut TxContext,
+    ) {
+        assert!(tx_context::sender(ctx) == printer.owner, ENotPrinterOwner);
+        assert!(printer_cap.printer_id == object::uid_to_inner(&printer.id), ENotAuthorized);
+        assert!(dof::exists_(&printer.id, b"print_job"), EPrintJobNotFound);
+
+        let expected_sculpt = get_print_job_sculpt_id(dof::borrow(&printer.id, b"print_job"));
+        assert!(sculpt_id == expected_sculpt, ENotAuthorized);
+
+        let printer_id = object::uid_to_inner(&printer.id);
+        {
+            let sculpt = kiosk::borrow_mut<Sculpt<ATELIER>>(kiosk, kiosk_cap, sculpt_id);
+            archimeters::sculpt::remove_printer_from_whitelist(sculpt, printer_id, ctx);
+        };
+
+        let job = dof::remove<vector<u8>, PrintJob>(&mut printer.id, b"print_job");
+        let customer = get_print_job_customer(&job);
+        let cleared_sculpt_id = get_print_job_sculpt_id(&job);
+        cancel_job_destroy(job, ctx);
+
+        event::emit(PrintJobCleared {
+            printer_id,
+            customer,
+            sculpt_id: cleared_sculpt_id,
+        });
     }
 
     // Withdraws accumulated fees from a printer

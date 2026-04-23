@@ -1,8 +1,8 @@
 use crate::app::core::App;
 use crate::app::{MessageType, RegistrationStatus};
 use anyhow::Result;
-use sui_sdk::types::base_types::ObjectID;
 use std::sync::Arc;
+use sui_sdk_types::Address;
 use tokio::sync::Mutex;
 
 impl App {
@@ -25,22 +25,23 @@ impl App {
         if self.printer_id != "No Printer ID" {
             self.set_message(MessageType::Info, "Sending status update to blockchain...".to_string());
             
-            let builder = crate::transactions::TransactionBuilder::new(
-                Arc::clone(&self.sui_client),
-                ObjectID::from(self.wallet.get_active_address().await?),
-                self.network_state.clone()
-            ).await;
-            
             // get printer info and printer cap
             let address = self.wallet.get_active_address().await?;
             
             match self.wallet.get_printer_info(address).await {
                 Ok(info) => {
+                    let builder = crate::transactions::TransactionBuilder::new(
+                        Arc::clone(&self.sui_rpc),
+                        (*self.tx_signer).clone(),
+                        self.wallet.address,
+                        self.network_state.clone(),
+                    )
+                    .with_printer_eureka_package(&info.eureka_package_id);
                     match self.wallet.get_printer_cap_id(address).await {
                         Ok(cap_id) => {
                             
-                            let printer_cap_id = ObjectID::from_hex_literal(&cap_id)?;
-                            let printer_object_id = ObjectID::from_hex_literal(&info.id)?;
+                            let printer_cap_id: Address = cap_id.parse().map_err(|e| anyhow::anyhow!("cap id: {}", e))?;
+                            let printer_object_id: Address = info.id.parse().map_err(|e| anyhow::anyhow!("printer id: {}", e))?;
                             
                             match builder.update_printer_status(printer_cap_id, printer_object_id).await {
                                 Ok(tx_id) => {
@@ -155,27 +156,21 @@ pub fn start_printer_registration_background(
         // Spawn background task to avoid blocking UI event loop
         tokio::spawn(async move {
             // Clone necessary data
-            let (sui_client, network_state, printer_alias, registry_id, address) = {
+            let (sui_rpc, tx_signer, network_state, printer_alias, registry_id, address) = {
                 let app_guard = app.lock().await;
                 if app_guard.registration_status != RegistrationStatus::Submitting {
                     return; // Not in submitting state, skip
                 }
                 (
-                    Arc::clone(&app_guard.sui_client),
+                    Arc::clone(&app_guard.sui_rpc),
+                    (*app_guard.tx_signer).clone(),
                     app_guard.network_state.clone(),
                     app_guard.printer_alias.clone(),
                     app_guard.network_state.get_current_package_ids().eureka_printer_registry_id,
-                    match app_guard.wallet.get_active_address().await {
-                        Ok(addr) => addr,
-                        Err(e) => {
-                            eprintln!("Failed to get wallet address: {}", e);
-                            return;
-                        }
-                    },
+                    app_guard.wallet.address,
                 )
             };
             
-            let sender = ObjectID::from(address);
             let app_clone = Arc::clone(&app);
             
             // Update message
@@ -185,17 +180,24 @@ pub fn start_printer_registration_background(
             }
             
             // Create transaction builder
-            let builder = crate::transactions::TransactionBuilder::new(
-                sui_client,
-                sender,
-                network_state.clone()
-            ).await;
+            let registry: Address = match registry_id.parse() {
+                Ok(a) => a,
+                Err(e) => {
+                    let mut app_guard = app_clone.lock().await;
+                    app_guard.error_message = Some(format!("Invalid registry id: {}", e));
+                    app_guard.registration_status = RegistrationStatus::Failed(e.to_string());
+                    return;
+                }
+            };
 
-            // Execute registration
-            match builder.register_printer(
-                registry_id.parse().unwrap(),
-                &printer_alias
-            ).await {
+            let builder = crate::transactions::TransactionBuilder::new(
+                sui_rpc,
+                tx_signer,
+                address,
+                network_state.clone(),
+            );
+
+            match builder.register_printer(registry, &printer_alias).await {
                 Ok(tx_digest) => {
                     let mut app_guard = app_clone.lock().await;
                     app_guard.registration_status = RegistrationStatus::Success(tx_digest.clone());

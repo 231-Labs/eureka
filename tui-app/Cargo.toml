@@ -3,6 +3,23 @@ name = "tui-app"
 version = "0.1.0"
 edition = "2021"
 
+# Examples still target the old monorepo `sui-sdk`; enable only if you add those deps back.
+[features]
+default = []
+legacy-monorepo-examples = []
+
+[[example]]
+name = "test_transfer_printjob"
+required-features = ["legacy-monorepo-examples"]
+
+[[example]]
+name = "test_seal_approve"
+required-features = ["legacy-monorepo-examples"]
+
+[[example]]
+name = "test_seal_decrypt_with_printjob"
+required-features = ["legacy-monorepo-examples"]
+
 [[bin]]
 name = "eureka-serial"
 path = "src/bin/eureka_serial.rs"
@@ -10,11 +27,18 @@ path = "src/bin/eureka_serial.rs"
 [dependencies]
 ratatui = "0.26.1"
 crossterm = "0.27.0"
-sui-sdk = { git = "https://github.com/MystenLabs/sui", branch = "main" }
-sui-config = { git = "https://github.com/MystenLabs/sui", branch = "main" }
-sui-keys = { git = "https://github.com/MystenLabs/sui", branch = "main" }
-sui-types = { git = "https://github.com/MystenLabs/sui", branch = "main" }
-shared-crypto = { git = "https://github.com/MystenLabs/sui", branch = "main" }
+
+# Sui gRPC stack (single git rev — seal-sdk-rs keeps its own embedded native Sui for Seal only)
+sui-rpc = { git = "https://github.com/MystenLabs/sui-rust-sdk", package = "sui-rpc", rev = "210e734ab50ab9a562e9a8ecf2ff5cfdb8c0f1b1" }
+sui-sdk-types = { git = "https://github.com/MystenLabs/sui-rust-sdk", package = "sui-sdk-types", rev = "210e734ab50ab9a562e9a8ecf2ff5cfdb8c0f1b1", default-features = false, features = ["serde", "hash"] }
+sui-transaction-builder = { git = "https://github.com/MystenLabs/sui-rust-sdk", package = "sui-transaction-builder", rev = "210e734ab50ab9a562e9a8ecf2ff5cfdb8c0f1b1", features = ["intents"] }
+sui-crypto = { git = "https://github.com/MystenLabs/sui-rust-sdk", package = "sui-crypto", rev = "210e734ab50ab9a562e9a8ecf2ff5cfdb8c0f1b1", features = ["ed25519"] }
+
+prost-types = "0.14"
+bech32 = "0.9"
+base64 = "0.22"
+serde_yaml = "0.9"
+
 bcs = "0.1.6"
 anyhow = "1.0"
 dirs = "6.0.0"
@@ -24,7 +48,7 @@ textwrap = "0.16"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 
-# Seal SDK for decryption
+# Seal SDK for decryption (native Sui client inside crate — separate from app gRPC client)
 seal-sdk-rs = { git = "https://github.com/gfusee/seal-sdk-rs", tag = "0.0.2", features = ["native-sui-sdk"] }
 reqwest = { version = "0.11", features = ["json"] }
 hex = "0.4"

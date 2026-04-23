@@ -1,141 +1,213 @@
-use std::collections::BTreeMap;
-use anyhow::{Result, anyhow};
-use sui_sdk::{
-    rpc_types::{
-        SuiMoveStruct,
-        SuiMoveValue,
-        SuiObjectDataOptions,
-        SuiObjectResponseQuery,
-        SuiParsedData,
-    },
-    types::{
-        base_types::{ObjectID, SuiAddress},
-    },
-};
+use anyhow::{anyhow, Result};
+use futures::TryStreamExt;
+use serde_json::{Map, Value as Json};
+use sui_rpc::proto::sui::rpc::v2::GetObjectRequest;
+use sui_rpc::proto::sui::rpc::v2::ListOwnedObjectsRequest;
+use sui_sdk_types::Address;
+
+use super::move_json::{move_fields_map, prost_value_to_json};
+use super::read_mask;
 use super::types::PrinterInfo;
-use super::client::Wallet;
 use super::utils::{extract_id_from_fields, extract_printer_id_from_cap};
+use super::client::Wallet;
 
 impl Wallet {
-    // Extract pool balance from move struct
-    fn extract_pool_balance(&self, fields: &BTreeMap<String, SuiMoveValue>) -> u128 {
-        fields.get("pool")
-            .and_then(|pool_field| {
-                if let SuiMoveValue::Struct(pool_struct) = pool_field {
-                    if let SuiMoveStruct::WithFields(pool_fields) = pool_struct {
-                        pool_fields.get("value").and_then(|value| {
-                            if let SuiMoveValue::Number(amount) = value {
-                                amount.to_string().parse::<u128>().ok()
-                            } else {
-                                None
-                            }
-                        })
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(0)
+    /// First address segment of a struct tag, e.g. `0xpkg::eureka::Printer` → `0xpkg`.
+    fn package_id_from_struct_tag(type_tag: &str) -> Option<String> {
+        let first = type_tag.split("::").next()?.trim();
+        if first.is_empty() {
+            return None;
+        }
+        Some(first.to_string())
     }
-    
-    // Extract printer info from move struct
-    fn extract_printer_from_move_struct(&self, move_struct: &SuiMoveStruct) -> Option<PrinterInfo> {
-        if let SuiMoveStruct::WithFields(fields) = move_struct {
-            let id = extract_id_from_fields(fields)?;
-            let pool_balance = self.extract_pool_balance(fields);
-            Some(PrinterInfo { id, pool_balance })
-        } else {
-            None
+
+    /// `true` if `type_tag` is `{package}::eureka::PrinterCap` (package compared as [`Address`]).
+    fn type_tag_is_printer_cap_for_package(type_tag: &str, package_hex: &str) -> bool {
+        if !type_tag.contains("::eureka::PrinterCap") {
+            return false;
+        }
+        let Some(tag_pkg) = Self::package_id_from_struct_tag(type_tag) else {
+            return false;
+        };
+        match (tag_pkg.parse::<Address>(), package_hex.parse::<Address>()) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => tag_pkg.eq_ignore_ascii_case(package_hex),
         }
     }
 
-    // Get user's PrinterCap and its printer_id
-    pub async fn get_printer_cap_info(&self, address: SuiAddress) -> Result<(String, String)> {
-        let mut options = SuiObjectDataOptions::new();
-        options.show_content = true;
-        options.show_owner = true;
-        options.show_type = true;
-        
-        // Get current network's package ID
-        let current_package_id = self.network_state.get_current_package_ids().eureka_package_id;
-        let printer_cap_type = format!("{}::eureka::PrinterCap", current_package_id);
-        
-        // Create a filter for the specific PrinterCap type
-        let filter = sui_sdk::rpc_types::SuiObjectDataFilter::StructType(
-            sui_sdk::types::parse_sui_struct_tag(&printer_cap_type)?
-        );
-        
-        // Query with type filter - this returns only PrinterCap objects from current package
-        let response = self.client.read_api()
-            .get_owned_objects(
-                address,
-                Some(SuiObjectResponseQuery::new(
-                    Some(filter),
-                    Some(options)
-                )),
-                None,
-                None
-            )
-            .await?;
-        
-        // Extract info from the first PrinterCap found
-        let cap_info = response.data.iter()
-            .filter_map(|obj| {
-                obj.data.as_ref()
-                    .and_then(|data| data.content.as_ref())
-                    .and_then(|content| {
-                        if let SuiParsedData::MoveObject(move_obj) = content {
-                            if let SuiMoveStruct::WithFields(fields) = &move_obj.fields {
-                                let cap_id = extract_id_from_fields(fields)?;
-                                let printer_id = extract_printer_id_from_cap(fields)?;
-                                return Some((cap_id, printer_id));
-                            }
-                        }
-                        None
-                    })
-            })
-            .next();
-        
-        // If PrinterCap not found, return error
-        cap_info.ok_or_else(|| anyhow!("No PrinterCap found for this address. Please register a printer first."))
+    /// `true` if `type_tag` is `{package}::eureka::Printer`.
+    fn type_tag_is_printer_for_package(type_tag: &str, package_hex: &str) -> bool {
+        if !type_tag.contains("::eureka::Printer") {
+            return false;
+        }
+        let Some(tag_pkg) = Self::package_id_from_struct_tag(type_tag) else {
+            return false;
+        };
+        match (tag_pkg.parse::<Address>(), package_hex.parse::<Address>()) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => tag_pkg.eq_ignore_ascii_case(package_hex),
+        }
     }
-    
-    // Get user's PrinterCap ID
-    pub async fn get_printer_cap_id(&self, address: SuiAddress) -> Result<String> {
+
+    fn extract_pool_balance(fields: &Map<String, Json>) -> u128 {
+        fields
+            .get("pool")
+            .and_then(|pool_field| {
+                let obj = pool_field.as_object()?;
+                let inner = obj.get("fields")?;
+                let value = inner.get("value")?;
+                json_u128(value)
+            })
+            .unwrap_or(0)
+    }
+
+    fn extract_printer_from_json(&self, root: &Json, eureka_package_id: String) -> Option<PrinterInfo> {
+        let fields = move_fields_map(root)?;
+        let id = extract_id_from_fields(&fields)?;
+        let pool_balance = Self::extract_pool_balance(&fields);
+        Some(PrinterInfo {
+            id,
+            pool_balance,
+            eureka_package_id,
+        })
+    }
+
+    pub async fn get_printer_cap_info(&self, address: Address) -> Result<(String, String)> {
+        let current_package_id = self.network_state.get_current_package_ids().eureka_package_id;
+        if current_package_id.is_empty() {
+            return Err(anyhow!(
+                "Eureka package ID is not set for this network (e.g. mainnet). Switch to devnet/testnet in the network menu or add an ID in constants."
+            ));
+        }
+
+        // Align object_type filter with canonical on-chain address strings so gRPC filtering matches constants.
+        let printer_cap_type = current_package_id
+            .parse::<Address>()
+            .map(|a| format!("{}::eureka::PrinterCap", a))
+            .unwrap_or_else(|_| format!("{}::eureka::PrinterCap", current_package_id));
+
+        let owner = address.to_string();
+
+        {
+            let client = self.rpc.lock().await;
+            // page_size is per RPC page; list_owned_objects stream follows page_token until all matching objects are read.
+            let req = ListOwnedObjectsRequest::default()
+                .with_owner(owner.clone())
+                .with_object_type(printer_cap_type)
+                .with_page_size(50)
+                .with_read_mask(read_mask("json,object_id,object_type"));
+
+            let stream = client.list_owned_objects(req);
+            tokio::pin!(stream);
+            while let Some(obj) = stream.try_next().await? {
+                let t = obj.object_type_opt().unwrap_or("");
+                if !Self::type_tag_is_printer_cap_for_package(t, current_package_id) {
+                    continue;
+                }
+                let Some(pv) = obj.json.as_ref() else {
+                    continue;
+                };
+                let j = prost_value_to_json(pv.as_ref());
+                let Some(fields) = move_fields_map(&j) else {
+                    continue;
+                };
+                if let (Some(cap_id), Some(printer_id)) = (
+                    extract_id_from_fields(&fields),
+                    extract_printer_id_from_cap(&fields),
+                ) {
+                    return Ok((cap_id, printer_id));
+                }
+            }
+        }
+
+        // Fallback: list owned objects only if gRPC `object_type` filter missed — still require exact package id from constants.
+        {
+            let client = self.rpc.lock().await;
+            let req = ListOwnedObjectsRequest::default()
+                .with_owner(owner)
+                .with_page_size(200)
+                .with_read_mask(read_mask("json,object_type,object_id"));
+
+            let stream = client.list_owned_objects(req);
+            tokio::pin!(stream);
+            while let Some(obj) = stream.try_next().await? {
+                let t = obj.object_type_opt().unwrap_or("");
+                if !Self::type_tag_is_printer_cap_for_package(t, current_package_id) {
+                    continue;
+                }
+                let Some(pv) = obj.json.as_ref() else {
+                    continue;
+                };
+                let j = prost_value_to_json(pv.as_ref());
+                let Some(fields) = move_fields_map(&j) else {
+                    continue;
+                };
+                if let (Some(cap_id), Some(printer_id)) = (
+                    extract_id_from_fields(&fields),
+                    extract_printer_id_from_cap(&fields),
+                ) {
+                    return Ok((cap_id, printer_id));
+                }
+            }
+        }
+
+        Err(anyhow!(
+            "No PrinterCap for Eureka package {} on this address (older deployments are ignored). Register a printer for the current package or switch network in constants.",
+            current_package_id
+        ))
+    }
+
+    pub async fn get_printer_cap_id(&self, address: Address) -> Result<String> {
         let (cap_id, _) = self.get_printer_cap_info(address).await?;
         Ok(cap_id)
     }
 
-    // Get printer information
-    pub async fn get_printer_info(&self, address: SuiAddress) -> Result<PrinterInfo> {
+    pub async fn get_printer_info(&self, address: Address) -> Result<PrinterInfo> {
         let (_, printer_id) = self.get_printer_cap_info(address).await?;
-        
-        let mut options = SuiObjectDataOptions::new();
-        options.show_content = true;
-        options.show_owner = true;
-        options.show_type = true;
-        
-        // Step 2: query shared Printer object using printer_id
-        let printer_object_id = ObjectID::from_hex_literal(&printer_id)
+        let printer_aid: Address = printer_id
+            .parse()
             .map_err(|e| anyhow!("Invalid printer ID format: {}", e))?;
-            
-        let printer_response = self.client.read_api()
-            .get_object_with_options(printer_object_id, options)
-            .await?;
-            
-        if let Some(data) = printer_response.data {
-            if let Some(content) = data.content {
-                if let SuiParsedData::MoveObject(move_obj) = content {
-                    if let Some(info) = self.extract_printer_from_move_struct(&move_obj.fields) {
-                        return Ok(info);
-                    }
-                }
+
+        let mut client = self.rpc.lock().await;
+        let resp = client
+            .ledger_client()
+            .get_object(
+                GetObjectRequest::new(&printer_aid).with_read_mask(read_mask("json,object_type")),
+            )
+            .await?
+            .into_inner();
+
+        let type_tag = resp.object().object_type_opt().unwrap_or("");
+        let current_package_id = self.network_state.get_current_package_ids().eureka_package_id;
+        if !Self::type_tag_is_printer_for_package(type_tag, current_package_id) {
+            return Err(anyhow!(
+                "Linked printer object type does not match configured Eureka package.\n\
+                 Object: {}\n\
+                 Expected package: {}::eureka::Printer\n\
+                 The PrinterCap may point at a printer from an older deployment; register again for the current package.",
+                type_tag,
+                current_package_id
+            ));
+        }
+        let eureka_package_id = current_package_id.to_string();
+
+        if let Some(j) = resp.object().json.as_ref() {
+            let json = prost_value_to_json(j);
+            if let Some(info) = self.extract_printer_from_json(&json, eureka_package_id) {
+                return Ok(info);
             }
         }
-        
-        // If no corresponding Printer object found, return error
-        Err(anyhow!("PrinterCap found but corresponding Printer object not found."))
+
+        Err(anyhow!(
+            "PrinterCap found but corresponding Printer object not found."
+        ))
     }
-} 
+}
+
+fn json_u128(v: &Json) -> Option<u128> {
+    match v {
+        Json::String(s) => s.parse().ok(),
+        Json::Number(n) => n.as_u64().map(|x| x as u128),
+        _ => None,
+    }
+}

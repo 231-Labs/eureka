@@ -4,8 +4,14 @@ edition = "2024.beta" # edition = "legacy" to use legacy (pre-2024) Move
 # license = ""           # e.g., "MIT", "GPL", "Apache 2.0"
 # authors = ["..."]      # e.g., ["Joe Smith (joesmith@noemail.com)", "John Snow (johnsnow@noemail.com)"]
 
+# Legacy `[addresses]` below disables the new package manager’s `[environments]` table, so if your
+# `sui client active-env` is devnet, use an explicit network for compile:
+#   sui move build -e testnet
+# Publish to testnet with CLI on testnet as usual.
+
 [dependencies]
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/mainnet" }
+# After republishing Archimeters, run `sui move build` here to refresh Move.lock; then publish Eureka.
 archimeters = { local = "../../../archimeters-1/contract", override = true }
 
 # For remote import, use the `{ git = "...", subdir = "...", rev = "..." }`.
