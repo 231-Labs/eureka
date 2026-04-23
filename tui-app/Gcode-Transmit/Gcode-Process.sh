@@ -3,14 +3,17 @@
 Options_control="$1"
 # Get the directory of the script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/common-device.sh"
 
 if [ "$Options_control" == "--print" ]; then
 
-  USB_Device="/dev/3Dprinter"
-  if [ ! -e "$USB_Device" ]; then
+  USB_Device="$(eureka_resolve_printer_device)" || USB_Device=""
+  if [ -z "$USB_Device" ]; then
     echo "Printer not connected!"
     exit 1
   fi
+  export EUREKA_PRINTER_DEVICE="$USB_Device"
 
   # Use relative path to execute sub-script
   "$SCRIPT_DIR/main/Gcode-Send.sh" &

@@ -3,15 +3,19 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/../common-device.sh"
+
 # Use relative path to get PID file
 PID_File_Path="$SCRIPT_DIR/Gcode-Send-PID.pid"
-USB_Device="/dev/3Dprinter"
+USB_Device="$(eureka_resolve_printer_device)" || USB_Device=""
 
 # Check if Printer is connected
-if [ ! -e "$USB_Device" ]; then
+if [ -z "$USB_Device" ]; then
   echo "Printer not connected!"
   exit 1
 fi
+export EUREKA_PRINTER_DEVICE="$USB_Device"
 
 if [ -f "$PID_File_Path" ]; then
     PID=$(cat "$PID_File_Path")
@@ -30,7 +34,7 @@ if [ -f "$PID_File_Path" ]; then
            echo "G1 Y220 F1500" > "$USB_Device"
 
         else
-            echo "Error: Unable to access /dev/3Dprinter"
+            echo "Error: Unable to access $USB_Device"
         fi
     else 
         echo "PID exists but process is not running: $PID"

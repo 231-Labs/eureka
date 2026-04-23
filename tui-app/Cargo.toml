@@ -3,6 +3,10 @@ name = "tui-app"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "eureka-serial"
+path = "src/bin/eureka_serial.rs"
+
 [dependencies]
 ratatui = "0.26.1"
 crossterm = "0.27.0"
@@ -24,3 +28,4 @@ serde = { version = "1.0", features = ["derive"] }
 seal-sdk-rs = { git = "https://github.com/gfusee/seal-sdk-rs", tag = "0.0.2", features = ["native-sui-sdk"] }
 reqwest = { version = "0.11", features = ["json"] }
 hex = "0.4"
+serialport = "4.3"
