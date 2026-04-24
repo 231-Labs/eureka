@@ -384,3 +384,114 @@ impl PrintJobDecryptor {
         Ok(plaintext)
     }
 }
+
+#[cfg(test)]
+mod walrus_user_blob_tests {
+    use super::PrintJobDecryptor;
+    use crate::constants::{AGGREGATOR_URL, EUREKA_TESTNET_PACKAGE_ID};
+    use seal_sdk_rs::generic_types::ObjectID as SealObjectId;
+    use seal_sdk_rs::native_sui_sdk::sui_types::base_types::ObjectID as SuiObjectId;
+
+    /// User-provided Walrus testnet blob (encrypted STL).
+    const BLOB_ID: &str = "uHFc8p9N1kMX16nie2yUHEKojMF-gO8f6Zx4EdAZmKM";
+
+    #[tokio::test]
+    #[ignore = "needs network"]
+    async fn walrus_blob_download_is_valid_seal_bcs() {
+        let d = PrintJobDecryptor::new(
+            "https://fullnode.testnet.sui.io:443".into(),
+            EUREKA_TESTNET_PACKAGE_ID,
+        )
+        .await
+        .expect("PrintJobDecryptor::new");
+
+        let bytes = d
+            .download_encrypted_data(BLOB_ID)
+            .await
+            .expect("Walrus download");
+        assert_eq!(
+            bytes.len(),
+            787,
+            "unexpected blob size (aggregators should agree)"
+        );
+
+        let enc = d
+            .parse_encrypted_object(&bytes)
+            .expect("Walrus body must be BCS EncryptedObject (Seal), same as Eureka download path");
+
+        let expected_pkg: SealObjectId = EUREKA_TESTNET_PACKAGE_ID.parse().unwrap();
+        assert_eq!(
+            enc.package_id, expected_pkg,
+            "Seal namespace (Eureka package) must match app testnet config"
+        );
+
+        eprintln!(
+            "[walrus_user_blob_tests] OK: {} bytes from {}, EncryptedObject.version={}, id_len={}, threshold={}, services={}",
+            bytes.len(),
+            AGGREGATOR_URL,
+            enc.version,
+            enc.id.len(),
+            enc.threshold,
+            enc.services.len()
+        );
+        eprintln!(
+            "[walrus_user_blob_tests] seal id bytes (for seal_approve / decrypt) as hex: 0x{}",
+            hex::encode(&enc.id)
+        );
+    }
+
+    /// Full decrypt like Eureka `decrypt_sealed_file_bytes` (needs `~/.sui/sui_config/client.yaml` + PrintJob on printer).
+    ///
+    /// ```text
+    /// EUREKA_TEST_PRINTER_ID=0x... EUREKA_TEST_PRINTER_CAP_ID=0x... \\
+    ///   cargo test walrus_blob_decrypt_with_env_printer -- --ignored --nocapture
+    /// ```
+    ///
+    /// `seal_resource_id` is taken from `EncryptedObject.id` (hex with `0x`), which matches the on-chain id used with `eureka::seal_approve`.
+    #[tokio::test]
+    #[ignore = "needs network + local Sui wallet + printer/cap env"]
+    async fn walrus_blob_decrypt_with_env_printer() {
+        let printer = std::env::var("EUREKA_TEST_PRINTER_ID")
+            .expect("set EUREKA_TEST_PRINTER_ID for decrypt attempt");
+        let cap = std::env::var("EUREKA_TEST_PRINTER_CAP_ID")
+            .expect("set EUREKA_TEST_PRINTER_CAP_ID for decrypt attempt");
+
+        let d = PrintJobDecryptor::new(
+            "https://fullnode.testnet.sui.io:443".into(),
+            EUREKA_TESTNET_PACKAGE_ID,
+        )
+        .await
+        .expect("PrintJobDecryptor::new");
+
+        let bytes = d.download_encrypted_data(BLOB_ID).await.expect("download");
+        let enc = d.parse_encrypted_object(&bytes).expect("parse");
+        let seal_resource_id = format!("0x{}", hex::encode(&enc.id));
+
+        let printer_oid = SuiObjectId::from_hex_literal(&printer).expect("printer id");
+        let cap_oid = SuiObjectId::from_hex_literal(&cap).expect("cap id");
+
+        let plaintext = d
+            .decrypt_sealed_file_bytes(&seal_resource_id, &bytes, printer_oid, cap_oid)
+            .await
+            .expect("Seal decrypt");
+
+        let is_ascii_stl = plaintext.starts_with(b"solid");
+        let is_binary_stl = plaintext.len() > 84
+            && u32::from_le_bytes(plaintext[80..84].try_into().unwrap()) > 0
+            && u32::from_le_bytes(plaintext[80..84].try_into().unwrap()) < 1_000_000
+            && plaintext.len() == 84 + 50 * u32::from_le_bytes(plaintext[80..84].try_into().unwrap()) as usize;
+        assert!(
+            is_ascii_stl || is_binary_stl,
+            "decrypted output does not look like STL (len {})",
+            plaintext.len()
+        );
+
+        let out = std::path::Path::new("/tmp/walrus_user_blob_decrypted.stl");
+        std::fs::write(out, &plaintext).expect("write decrypted stl");
+        eprintln!(
+            "[walrus_user_blob_tests] decrypted {} bytes -> {}",
+            plaintext.len(),
+            out.display()
+        );
+    }
+}
