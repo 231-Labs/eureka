@@ -1,12 +1,65 @@
 //! Sends `test.gcode` (or path from argv[1]) to the printer over USB serial.
 //! Honors `EUREKA_PRINTER_DEVICE`; otherwise tries /dev/3Dprinter, /dev/ttyACM0, /dev/ttyUSB0.
 //! Optional: `EUREKA_PRINTER_BAUD` (default 115200), `EUREKA_LINE_DELAY_MS` (default 5).
+//!
+//! After the last G-code line (default): drains the RX buffer, sends `M400`, then waits for an
+//! `ok` response line so the host does not finish before motion stops. Set
+//! `EUREKA_SKIP_PRINT_COMPLETION_WAIT=1` or `true` to skip (testing or firmware without `M400`).
 
 use std::env;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::time::Duration;
+
+use serialport::SerialPort;
+
+fn skip_print_completion_wait() -> bool {
+    match env::var("EUREKA_SKIP_PRINT_COMPLETION_WAIT")
+        .ok()
+        .as_deref()
+        .map(str::trim)
+    {
+        Some("1") | Some("true") | Some("TRUE") | Some("True") => true,
+        _ => false,
+    }
+}
+
+/// Drop stale RX data so a following `ok` is from `M400`, not an earlier command.
+fn drain_receive_buffer(port: &mut dyn SerialPort) -> io::Result<()> {
+    let prev = port.timeout();
+    port.set_timeout(Duration::from_millis(25))?;
+    let mut buf = [0u8; 512];
+    loop {
+        match port.read(&mut buf) {
+            Ok(0) => break,
+            Ok(_) => continue,
+            Err(e) if e.kind() == io::ErrorKind::TimedOut => break,
+            Err(e) => {
+                let _ = port.set_timeout(prev);
+                return Err(e);
+            }
+        }
+    }
+    port.set_timeout(prev)?;
+    Ok(())
+}
+
+/// Wait for Marlin-style `ok` / `ok …` line after `M400` (long timeout: motion may be large).
+fn wait_for_ok_line(port: &mut dyn SerialPort) -> io::Result<()> {
+    port.set_timeout(Duration::from_secs(300))?;
+    let mut reader = BufReader::new(port);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        reader.read_line(&mut line)?;
+        let t = line.trim();
+        if t == "ok" || t.starts_with("ok ") {
+            break;
+        }
+    }
+    Ok(())
+}
 
 fn resolve_device() -> Option<String> {
     if let Ok(p) = env::var("EUREKA_PRINTER_DEVICE") {
@@ -70,6 +123,22 @@ fn main() -> anyhow::Result<()> {
             .flush()
             .map_err(|e| anyhow::anyhow!("Flush failed: {}", e))?;
         std::thread::sleep(delay);
+    }
+
+    if !skip_print_completion_wait() {
+        drain_receive_buffer(&mut *port)?;
+        port
+            .write_all(b"M400\n")
+            .map_err(|e| anyhow::anyhow!("Write M400 failed: {}", e))?;
+        port
+            .flush()
+            .map_err(|e| anyhow::anyhow!("Flush after M400 failed: {}", e))?;
+        wait_for_ok_line(&mut *port).map_err(|e| {
+            anyhow::anyhow!(
+                "Waiting for ok after M400 failed: {} (set EUREKA_SKIP_PRINT_COMPLETION_WAIT=1 to skip)",
+                e
+            )
+        })?;
     }
 
     Ok(())
