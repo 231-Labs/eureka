@@ -391,7 +391,7 @@ pub(crate) async fn run_start_print_job_for_active_task(
 pub(crate) async fn run_complete_print_job_from_sculpt_selection(
     app: Arc<Mutex<App>>,
 ) -> Result<(), String> {
-    let (sculpt_id_str, wallet, sui_rpc, tx_signer, network_state) = {
+    let (sculpt_id_str, source_kiosk_id, wallet, sui_rpc, tx_signer, network_state) = {
         let g = app.lock().await;
         let idx = g
             .sculpt_state
@@ -400,8 +400,10 @@ pub(crate) async fn run_complete_print_job_from_sculpt_selection(
         if idx >= g.sculpt_items.len() {
             return Err("Invalid sculpt selection".to_string());
         }
+        let item = &g.sculpt_items[idx];
         (
-            g.sculpt_items[idx].id.clone(),
+            item.id.clone(),
+            item.source_kiosk_id.clone(),
             g.wallet.clone(),
             Arc::clone(&g.sui_rpc),
             g.tx_signer.clone(),
@@ -419,7 +421,6 @@ pub(crate) async fn run_complete_print_job_from_sculpt_selection(
         .map_err(|e| format!("Failed to get PrinterCap ID: {}", e))?;
     let printer_cap_id = App::parse_object_id(&cap_id, "printer cap ID")?;
     let printer_object_id = App::parse_object_id(&info.id, "printer object ID")?;
-    let sculpt_id = App::parse_object_id(&sculpt_id_str, "sculpt ID")?;
     let builder = crate::transactions::TransactionBuilder::new(
         sui_rpc,
         (*tx_signer).clone(),
@@ -434,9 +435,19 @@ pub(crate) async fn run_complete_print_job_from_sculpt_selection(
             "Completing print job, waiting for blockchain confirmation...".to_string(),
         );
     }
-    match builder
-        .complete_print_job(printer_cap_id, printer_object_id, sculpt_id)
-        .await
+    // Kiosk-listed sculpts are not transaction inputs as `ImmOrOwned`; `complete_print_job` would fail
+    // PTB simulation with "invalid argument". Use the kiosk-aligned close path (same as mock / task flow).
+    let completion_result = if source_kiosk_id.is_some() {
+        builder
+            .transfer_completed_print_job(printer_cap_id, printer_object_id)
+            .await
+    } else {
+        let sculpt_id = App::parse_object_id(&sculpt_id_str, "sculpt ID")?;
+        builder
+            .complete_print_job(printer_cap_id, printer_object_id, sculpt_id)
+            .await
+    };
+    match completion_result
     {
         Ok(tx_id) => {
             {

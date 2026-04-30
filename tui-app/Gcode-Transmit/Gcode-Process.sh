@@ -18,14 +18,17 @@ if [ "$Options_control" == "--print" ]; then
   # Use relative path to execute sub-script
   "$SCRIPT_DIR/main/Gcode-Send.sh" &
   wait $!
-  echo $? > "$SCRIPT_DIR/Gcode-Send-Status"
+  gcode_send_status=$?
+  echo "$gcode_send_status" > "$SCRIPT_DIR/Gcode-Send-Status"
+  exit "$gcode_send_status"
 
 elif [ "$Options_control" == "--stop" ]; then
 
   # Use relative path to execute stop script
   "$SCRIPT_DIR/main/Gcode-Stop.sh"
-  wait $!
-  echo $? > "$SCRIPT_DIR/Gcode-Stop-Status"
+  gcode_stop_status=$?
+  echo "$gcode_stop_status" > "$SCRIPT_DIR/Gcode-Stop-Status"
+  exit "$gcode_stop_status"
 
 
 elif [ "$Options_control" == "--help" ]; then
