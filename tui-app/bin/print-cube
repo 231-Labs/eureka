@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# Short memorable name: add tui-app/bin to PATH, then run `print-cube` from anywhere.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$ROOT/../Gcode-Transmit/print-test-cube.sh" "$@"

@@ -15,17 +15,23 @@ if [ "$Options_control" == "--print" ]; then
   fi
   export EUREKA_PRINTER_DEVICE="$USB_Device"
 
-  # Use relative path to execute sub-script
+  # Propagate Gcode-Send.sh's exit code; previously we wrote `$?` to a file which
+  # silently swallowed failures (slicer/serial) and made the caller think the
+  # print succeeded — triggering an on-chain `complete_print_job` for a job that
+  # never actually printed.
   "$SCRIPT_DIR/main/Gcode-Send.sh" &
-  wait $!
-  echo $? > "$SCRIPT_DIR/Gcode-Send-Status"
+  send_pid=$!
+  wait "$send_pid"
+  send_status=$?
+  echo "$send_status" > "$SCRIPT_DIR/Gcode-Send-Status"
+  exit "$send_status"
 
 elif [ "$Options_control" == "--stop" ]; then
 
-  # Use relative path to execute stop script
   "$SCRIPT_DIR/main/Gcode-Stop.sh"
-  wait $!
-  echo $? > "$SCRIPT_DIR/Gcode-Stop-Status"
+  stop_status=$?
+  echo "$stop_status" > "$SCRIPT_DIR/Gcode-Stop-Status"
+  exit "$stop_status"
 
 
 elif [ "$Options_control" == "--help" ]; then

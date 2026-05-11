@@ -34,18 +34,38 @@ async fn download_model_isolated(
         fs::create_dir_all(&gcode_dir)?;
     }
 
+    // `-f` makes curl exit non-zero on HTTP 4xx/5xx (otherwise an aggregator 404 silently
+    // writes the error body — or an empty file — into `test.stl`, which downstream prusa-slicer
+    // then "fails fast" on and the failure is swallowed by the print script).
+    // `-L` follows redirects in case the aggregator relocates the blob URL.
     let status = tokio::process::Command::new("curl")
-        .arg("-s")
-        .arg("-S")
-        .arg(&url)
+        .arg("-fsSL")
         .arg("-o")
         .arg(&temp_path)
+        .arg(&url)
         .status()
         .await?;
 
     if !status.success() {
-        return Err(anyhow::anyhow!("Failed to download 3D model"));
+        let _ = fs::remove_file(&temp_path);
+        return Err(anyhow::anyhow!(
+            "Failed to download 3D model from Walrus aggregator (HTTP error). URL: {}",
+            url
+        ));
     }
+
+    let downloaded_size = fs::metadata(&temp_path).map(|m| m.len()).unwrap_or(0);
+    if downloaded_size == 0 {
+        let _ = fs::remove_file(&temp_path);
+        return Err(anyhow::anyhow!(
+            "Downloaded 0-byte file from Walrus (blob may not exist on this aggregator). URL: {}",
+            url
+        ));
+    }
+    log.push(format!(
+        "[LOG] Downloaded {} bytes from Walrus",
+        downloaded_size
+    ));
 
     if let Some(resource_id_str) = seal_resource_id {
         log.push("[LOG] 🔐 Encrypted model: decrypting via PrintJob + eureka::seal_approve...".to_string());
@@ -66,6 +86,27 @@ async fn download_model_isolated(
         )
         .await?;
         log.push("[LOG] ✅ Model decrypted successfully".to_string());
+    }
+
+    // Final sanity check: catch the case where a Sculpt is actually Seal-encrypted but
+    // `seal_resource_id` was missing/None on the SculptItem — without this guard we would
+    // rename the still-encrypted bytes into `Gcode-Transmit/test.stl`, prusa-slicer would
+    // bail in milliseconds, and the failure used to be swallowed and reported as success.
+    let head = match fs::read(&temp_path) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            let _ = fs::remove_file(&temp_path);
+            return Err(anyhow::anyhow!("Failed to read downloaded model: {}", e));
+        }
+    };
+    if is_file_encrypted(&head) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(anyhow::anyhow!(
+            "Downloaded blob does not look like an STL (likely still Seal-encrypted). \
+             seal_resource_id={:?} — verify the on-chain Sculpt is set up correctly and \
+             that a PrintJob exists so the model can be decrypted before slicing.",
+            seal_resource_id
+        ));
     }
 
     fs::rename(&temp_path, &final_path).map_err(|e| anyhow::anyhow!("Failed to move 3D model: {}", e))?;

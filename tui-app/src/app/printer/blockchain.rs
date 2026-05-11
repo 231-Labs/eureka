@@ -388,10 +388,14 @@ pub(crate) async fn run_start_print_job_for_active_task(
 }
 
 /// Complete print job using selected sculpt — **no** `App` mutex held across the transaction.
+///
+/// `complete_print_job` on-chain takes an owned `Sculpt` reference; models listed in a **Kiosk** are not
+/// wallet-owned inputs for PTB simulation. For kiosk-backed sculpts we call `transfer_completed_print_job`
+/// instead (same detach behavior, without passing the sculpt object).
 pub(crate) async fn run_complete_print_job_from_sculpt_selection(
     app: Arc<Mutex<App>>,
 ) -> Result<(), String> {
-    let (sculpt_id_str, wallet, sui_rpc, tx_signer, network_state) = {
+    let (sculpt_id_str, mut source_kiosk_id, wallet, sui_rpc, tx_signer, network_state) = {
         let g = app.lock().await;
         let idx = g
             .sculpt_state
@@ -400,8 +404,10 @@ pub(crate) async fn run_complete_print_job_from_sculpt_selection(
         if idx >= g.sculpt_items.len() {
             return Err("Invalid sculpt selection".to_string());
         }
+        let item = &g.sculpt_items[idx];
         (
-            g.sculpt_items[idx].id.clone(),
+            item.id.clone(),
+            item.source_kiosk_id.clone(),
             g.wallet.clone(),
             Arc::clone(&g.sui_rpc),
             g.tx_signer.clone(),
@@ -409,6 +415,14 @@ pub(crate) async fn run_complete_print_job_from_sculpt_selection(
         )
     };
     let address = wallet.address;
+    let sculpt_id = App::parse_object_id(&sculpt_id_str, "sculpt ID")?;
+    if source_kiosk_id.is_none() {
+        match wallet.find_kiosk_id_for_sculpt(address, sculpt_id).await {
+            Ok(Some(kid)) => source_kiosk_id = Some(kid.to_string()),
+            Ok(None) => {}
+            Err(e) => return Err(format!("Could not resolve kiosk for sculpt: {}", e)),
+        }
+    }
     let info = wallet
         .get_printer_info(address)
         .await
@@ -419,7 +433,6 @@ pub(crate) async fn run_complete_print_job_from_sculpt_selection(
         .map_err(|e| format!("Failed to get PrinterCap ID: {}", e))?;
     let printer_cap_id = App::parse_object_id(&cap_id, "printer cap ID")?;
     let printer_object_id = App::parse_object_id(&info.id, "printer object ID")?;
-    let sculpt_id = App::parse_object_id(&sculpt_id_str, "sculpt ID")?;
     let builder = crate::transactions::TransactionBuilder::new(
         sui_rpc,
         (*tx_signer).clone(),
@@ -431,13 +444,23 @@ pub(crate) async fn run_complete_print_job_from_sculpt_selection(
         let mut g = app.lock().await;
         g.set_message(
             MessageType::Info,
-            "Completing print job, waiting for blockchain confirmation...".to_string(),
+            if source_kiosk_id.is_some() {
+                "Completing print job (kiosk sculpt — closing job on-chain)...".to_string()
+            } else {
+                "Completing print job, waiting for blockchain confirmation...".to_string()
+            },
         );
     }
-    match builder
-        .complete_print_job(printer_cap_id, printer_object_id, sculpt_id)
-        .await
-    {
+    let completion_result = if source_kiosk_id.is_some() {
+        builder
+            .transfer_completed_print_job(printer_cap_id, printer_object_id)
+            .await
+    } else {
+        builder
+            .complete_print_job(printer_cap_id, printer_object_id, sculpt_id)
+            .await
+    };
+    match completion_result {
         Ok(tx_id) => {
             {
                 let mut g = app.lock().await;
@@ -467,7 +490,12 @@ pub(crate) async fn run_complete_print_job_from_sculpt_selection(
             Ok(())
         }
         Err(e) => {
-            let user_friendly_error = parse_blockchain_error(&e.to_string(), "complete print job");
+            let ctx = if source_kiosk_id.is_some() {
+                "close print job on-chain (kiosk sculpt)"
+            } else {
+                "complete print job"
+            };
+            let user_friendly_error = parse_blockchain_error(&e.to_string(), ctx);
             let mut g = app.lock().await;
             g.set_message(MessageType::Error, user_friendly_error.clone());
             Err(user_friendly_error)
